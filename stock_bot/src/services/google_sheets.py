@@ -5,7 +5,7 @@ from src.config import settings
 class GoogleSheetService:
     def __init__(self, credentials_path='credenciales.json'):
         self.gc = gspread.service_account(filename=credentials_path)
-        self.sh = self.gc.open(settings.SHEET_NAME)
+        self.sh = self.gc.open(settings.GOOGLE_SHEET_NAME)
         
         # Cacheamos las hojas
         self.worksheet_stock = self.sh.worksheet("STOCK")
