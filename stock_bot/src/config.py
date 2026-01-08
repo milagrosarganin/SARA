@@ -10,7 +10,7 @@ class Settings:
     
     # 2. Nombre de tu Google Sheet
     # (Si no encuentra el nombre en el .env, usa "STOCK_MH" por defecto)
-    GOOGLE_SHEET_NAME = os.getenv("SHEET_NAME", "STOCK_MH")
+    GOOGLE_SHEET_NAME = os.getenv("GOOGLE_SHEET_NAME", "SISTEMA_STOCK_MASTER")
     
     # 3. ID del Grupo de Alertas
     # Intenta convertirlo a número. Si falla, pone 0.
