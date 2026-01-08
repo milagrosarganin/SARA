@@ -1,0 +1,14 @@
+# Archivos de seguridad (NUNCA SUBIR)
+credenciales.json
+.env
+
+# Archivos basura de Python
+__pycache__/
+*.pyc
+
+# Carpetas de entornos virtuales
+venv/
+env/
+.venv/
+.idea/
+.vscode/

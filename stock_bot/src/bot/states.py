@@ -1,0 +1,25 @@
+class BotStates:
+    SELECT_SECTOR = 0
+    INPUT_NAME = 1       # Para pedir el nombre
+    SELECT_LOCAL = 2     # Para pedir Via Appia / Revoque
+    SELECT_CATEGORY = 3  # Para elegir la categoría
+    SELECT_PRODUCT = 4
+    INPUT_QUANTITY = 5
+    SELECT_ACTION = 6    # Para el menú de Admin/Encargado
+    CHECK_PIN = 7
+    INPUT_COMMENT = 8    # Para escribir el comentario
+    ORDER_PRODUCT = 9
+    ORDER_QUANTITY = 10
+    ORDER_SUPPLIER = 11
+    ORDER_INPUT_NAME = 12
+    SELECT_PROVIDER_PAY = 13
+    INPUT_PAYMENT_AMOUNT = 14
+    CONFIRM_PAYMENT = 15
+    ASK_SUPPLIER = 20
+    ASK_TOTAL_AMOUNT = 21
+    ASK_INVOICE_TYPE = 22
+    ASK_EXPIRATION = 23
+    CONFIRM_MORE_PRODUCTS = 24
+    CHECK_SAME_INVOICE = 25
+    SELECT_SUPPLIER = 26  
+    ASK_UNIT_PRICE = 27
