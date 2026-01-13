@@ -1,3 +1,9 @@
+import os
+import sys
+
+carpeta_del_bot = os.path.dirname(os.path.abspath(__file__))
+os.chdir(carpeta_del_bot)
+
 import logging
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, ConversationHandler, CommandHandler, MessageHandler, filters
@@ -19,7 +25,7 @@ class StockBotApp:
     def __init__(self):
         self.application = ApplicationBuilder().token(settings.TELEGRAM_TOKEN).build()
         self.flow_controller = StockFlowController()
-        
+
         # Definimos el manejador de la conversación con TODOS los pasos nuevos
         self.conversation_handler = ConversationHandler(
             entry_points=[CommandHandler('start', self.flow_controller.start)],
@@ -79,7 +85,7 @@ class StockBotApp:
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.flow_controller.payment_amount_received)
                 ],
                 BotStates.ASK_SUPPLIER: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.flow_controller.supplier_received) 
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.flow_controller.supplier_received)
                 ],
                 BotStates.ASK_TOTAL_AMOUNT: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.flow_controller.amount_received)
@@ -104,11 +110,11 @@ class StockBotApp:
                 BotStates.SELECT_SUPPLIER: [
                     CallbackQueryHandler(self.flow_controller.supplier_selected)
                 ],
-                
+
                 BotStates.ASK_TOTAL_AMOUNT: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.flow_controller.amount_received)
                 ],
-                
+
                 BotStates.ASK_INVOICE_TYPE: [
                     CallbackQueryHandler(self.flow_controller.invoice_type_selected),
                     # Agregamos esto para atrapar si escriben en vez de tocar botón:

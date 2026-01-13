@@ -1,14 +1,25 @@
 import gspread
-from datetime import datetime
 from src.config import settings
+from datetime import datetime  # <--- ¡ESTO FALTABA! Sin esto no guarda la fecha.
 
 class GoogleSheetService:
-    def __init__(self, credentials_path='credenciales.json'):
-        self.gc = gspread.service_account(filename=credentials_path)
+    def __init__(self):
+        # --- CHIVATO DE DEBUG ---
+        print(f"👀 OJO: Intentando abrir la hoja llamada: '{settings.GOOGLE_SHEET_NAME}'")
+        # ------------------------
+
+        self.gc = gspread.service_account(filename='credenciales.json')
         self.sh = self.gc.open(settings.GOOGLE_SHEET_NAME)
         
+        # Intentamos buscar la pestaña "STOCK"
+        try:
+            self.worksheet_stock = self.sh.worksheet("STOCK")
+        except:
+            # Si no existe una pestaña llamada "STOCK", agarramos la primera que encuentre
+            print("⚠️ No encontré pestaña 'STOCK', usando la primera hoja.")
+            self.worksheet_stock = self.sh.get_worksheet(0)        
+        
         # Cacheamos las hojas
-        self.worksheet_stock = self.sh.worksheet("STOCK")
         self.worksheet_historial = self.sh.worksheet("HISTORIAL")
         self.worksheet_pedidos = self.sh.worksheet("PEDIDOS")
         self.worksheet_comentarios = self.sh.worksheet("COMENTARIOS")
@@ -16,7 +27,6 @@ class GoogleSheetService:
         self.worksheet_gastos = self.sh.worksheet("GASTOS")
         self.worksheet_ingresos = self.sh.worksheet("INGRESOS")
 
-    # --- LIMPIEZA DE NÚMEROS (MEJORADA PARA ARGENTINA) ---
     # --- LIMPIEZA DE NÚMEROS INTELIGENTE ---
     def _clean_number(self, value):
         """Convierte texto sucio (10 kg, $30.000, 10,5) en número float seguro"""
@@ -61,11 +71,15 @@ class GoogleSheetService:
     # --- MOVIMIENTOS ---
     def register_movement(self, user_name, sector, product_name, quantity, local):
         try:
+            # AQUI FALLABA ANTES PORQUE FALTABA EL IMPORT DE DATETIME
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
             row = [timestamp, user_name, sector, product_name, "INGRESO 🟢" if int(quantity)>0 else "RETIRO 🔴", int(quantity), local]
             self.worksheet_historial.append_row(row)
             return True
-        except: return False
+        except Exception as e: 
+            print(f"❌ Error guardando historial: {e}")
+            return False
 
     def update_stock(self, product_name, quantity, mode='RETIRO', new_price=None):
         print(f"🕵️ DEBUG: Procesando {product_name}...")
@@ -81,9 +95,9 @@ class GoogleSheetService:
                 row_values.append("")
             
             # ÍNDICES (Restamos 1 porque Python empieza en 0)
-            # Col E (5) -> índice 4
-            # Col F (6) -> índice 5
-            # Col G (7) -> índice 6
+            # Col E (5) -> índice 4 (Stock Min)
+            # Col F (6) -> índice 5 (Stock Actual)
+            # Col G (7) -> índice 6 (Precio)
             
             curr_val = row_values[5]      # Stock Actual (Col F)
             min_val  = row_values[4]      # Stock Mínimo (Col E)
