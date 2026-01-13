@@ -122,7 +122,10 @@ class StockBotApp:
                 ],
                 BotStates.ASK_UNIT_PRICE: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.flow_controller.price_received)
-                    ],
+                ],
+                BotStates.PREGUNTA_CONTINUAR: [
+                    CallbackQueryHandler(self.flow_controller.decision_continuar_retiro)
+                ],
             },
             fallbacks=[CommandHandler('start', self.flow_controller.start)]
         )

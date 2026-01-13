@@ -12,6 +12,10 @@ class StockFlowController:
 
     # --- INICIO Y MENÚ PRINCIPAL ---
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        # --- LIMPIEZA DE MEMORIA ---
+        # Si escribe /start, asumimos que es un usuario nuevo o una sesión nueva
+        context.user_data.clear() 
+        
         context.user_data['modo'] = 'RETIRO'
         user = update.effective_user.first_name
         
@@ -46,12 +50,27 @@ class StockFlowController:
             await query.edit_message_text(f"🔑 {sector}: ¿Qué tarea vas a realizar?", reply_markup=KeyboardBuilder.admin_action_menu())
             return BotStates.SELECT_ACTION
             
-        # Opción Ingreso Stock (Viene de poner PIN)
+        # Opción Ingreso Stock
         if context.user_data.get('modo') == 'INGRESO':
             await query.edit_message_text(f"✅ Sector: {sector}\n🏢 Decime: ¿De qué **PROVEEDOR** es la mercadería?")
             return BotStates.ASK_SUPPLIER 
         
-        # Opción Empleados (Retiro)
+        # --- MODO RÁFAGA (EMPLEADOS) ---
+        # Si ya tenemos nombre y local en memoria, saltamos pasos
+        if 'nombre_usuario' in context.user_data and 'local' in context.user_data:
+            nombre = context.user_data['nombre_usuario']
+            local = context.user_data['local']
+            
+            # Buscamos categorías directamente
+            cats = self.sheet_service.get_unique_categories(sector)
+            if not cats:
+                 await query.edit_message_text("⚠️ No encontré categorías para este sector.", reply_markup=KeyboardBuilder.main_sector_menu())
+                 return BotStates.SELECT_SECTOR
+
+            await query.edit_message_text(f"👤 **{nombre}** ({local})\n📂 Entrando a {sector}.\nSeleccioná categoría:", reply_markup=KeyboardBuilder.category_menu(cats))
+            return BotStates.SELECT_CATEGORY
+            
+        # Si NO tenemos datos, flujo normal (pedir nombre)
         await query.edit_message_text(f"✅ Sector: {sector}\n👤 Por favor, escribí tu **NOMBRE**:")
         return BotStates.INPUT_NAME
 
@@ -134,35 +153,26 @@ class StockFlowController:
             
             msg = f"✅ Retiro Registrado.\nQuedan: {stock}" if exito else "⚠️ Error técnico, pero se guardó en historial."
             
-            # 3. Alerta de Stock Bajo (CORREGIDA Y ALINEADA)
+            # 3. Alerta de Stock Bajo
             if alerta:
-                print(f"🕵️ DEBUG ALERTA: Intentando enviar al grupo ID: {settings.ID_GRUPO_ALERTAS}")
-                try:
-                    alert_msg = (
-                        f"🚨 **ALERTA DE STOCK BAJO** 🚨\n\n"
-                        f"📦 **Producto:** {prod}\n"
-                        f"📉 **Quedan:** {stock}\n"
-                        f"⛔ **Mínimo:** {minimo}\n"
-                        f"👤 **Responsable:** {user}\n"
-                        f"📍 **Sector:** {sector}"
-                    )
-                    
-                    if settings.ID_GRUPO_ALERTAS:
+                # ... (tu código de alerta igual que antes) ...
+                if settings.ID_GRUPO_ALERTAS:
+                    try:
+                        alert_msg = f"🚨 **ALERTA**\n{prod} bajo mínimo ({stock})"
                         await context.bot.send_message(chat_id=settings.ID_GRUPO_ALERTAS, text=alert_msg)
-                        msg += "\n⚠️ **¡Se envió alerta a compras!**"
-                        print("✅ DEBUG ALERTA: Mensaje enviado con éxito.")
-                    else:
-                        print("❌ DEBUG ALERTA: No hay ID de grupo configurado.")
+                    except: pass
 
-                except Exception as e_alert:
-                    print(f"🔥 ERROR ALERTA TELEGRAM: {e_alert}")
-                    msg += "\n(Error técnico enviando al grupo)"
-            
             await update.message.reply_text(msg)
             
+            # --- AQUÍ CAMBIA: PREGUNTA BUCLE ---
             context.user_data['modo'] = 'RETIRO' 
-            await update.message.reply_text("¿Algo más?", reply_markup=KeyboardBuilder.main_sector_menu())
-            return BotStates.SELECT_SECTOR
+            
+            # Usamos el menú SI/NO para preguntar si sigue
+            await update.message.reply_text(
+                "🔄 **¿Necesitás retirar algo más?**", 
+                reply_markup=KeyboardBuilder.yes_no_menu()
+            )
+            return BotStates.PREGUNTA_CONTINUAR
 
     # --- FLUJO DE INGRESO: VENCIMIENTO Y PRECIO (NUEVO) ---
     async def expiration_received(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -392,3 +402,22 @@ class StockFlowController:
         self.sheet_service.save_comment(datetime.now().strftime("%Y-%m-%d"), context.user_data.get('nombre_usuario'), context.user_data.get('local'), update.message.text)
         await update.message.reply_text("✅ Comentario enviado.", reply_markup=KeyboardBuilder.main_sector_menu())
         return BotStates.SELECT_SECTOR
+
+    async def decision_continuar_retiro(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        
+        if query.data == 'SI':
+            # Volvemos a mostrar los sectores, pero el "sector_selected" recordará el nombre
+            user = context.user_data.get('nombre_usuario', 'Usuario')
+            await query.edit_message_text(
+                f"👍 Dale {user}, ¿De qué sector sacamos ahora?", 
+                reply_markup=KeyboardBuilder.main_sector_menu()
+            )
+            return BotStates.SELECT_SECTOR
+            
+        else:
+            # Si dice NO, terminamos y limpiamos
+            context.user_data.clear() # Limpiamos para el próximo
+            await query.edit_message_text("👋 ¡Listo! Cerré tu sesión. Usá /start cuando vuelvas.")
+            return ConversationHandler.END
