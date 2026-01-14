@@ -332,12 +332,11 @@ class StockFlowController:
         if action == 'BACK_MAIN': return await self.start(update, context)
         
         if action == 'VER_REPORTES':
-            rep = self.sheet_service.get_daily_movements_report()
-            fal = self.sheet_service.get_stock_report()
-            full = f"{rep}\n\n{fal}"
-            if len(full) > 4000: full = full[:4000]
-            await query.edit_message_text(full, parse_mode='Markdown', reply_markup=KeyboardBuilder.admin_action_menu())
-            return BotStates.SELECT_ACTION
+            await query.edit_message_text(
+                "📅 **REPORTES**\nPrimero, seleccioná el período:", 
+                reply_markup=KeyboardBuilder.report_range_menu() # <--- Menú nuevo 1
+            )
+            return BotStates.SELECT_REPORT_RANGE
             
         if action == 'INGRESAR_STOCK':
             context.user_data['next_action'] = 'INGRESAR'
@@ -442,3 +441,48 @@ class StockFlowController:
         # Le mostramos la info y le dejamos el menú de admin para seguir
         await update.message.reply_text(msg, parse_mode='Markdown', reply_markup=KeyboardBuilder.admin_action_menu())
         return BotStates.SELECT_ACTION
+
+    async def report_range_selected(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        data = query.data
+        
+        if data == "BACK_ADMIN": # Volver al menú principal de admin
+            await query.edit_message_text("🔑 Admin: ¿Qué tarea vas a realizar?", reply_markup=KeyboardBuilder.admin_action_menu())
+            return BotStates.SELECT_ACTION
+            
+        # Guardamos si eligió DIARIO o SEMANAL
+        rango = "DIARIO" if data == "RANGO_DIARIO" else "SEMANAL"
+        context.user_data['report_range'] = rango
+        
+        await query.edit_message_text(
+            f"📅 Período: **{rango}**\nAhora, ¿qué querés ver?", 
+            reply_markup=KeyboardBuilder.report_type_menu(), # <--- Menú nuevo 2
+            parse_mode="Markdown"
+        )
+        return BotStates.SELECT_REPORT_TYPE
+
+    async def report_type_selected(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        data = query.data
+        
+        if data == "BACK_RANGE": # Volver a elegir fecha
+            await query.edit_message_text("📅 Seleccioná el período:", reply_markup=KeyboardBuilder.report_range_menu())
+            return BotStates.SELECT_REPORT_RANGE
+
+        rango = context.user_data.get('report_range', 'DIARIO')
+        tipo = data.replace("TYPE_", "") # Queda "FALTANTES", "INGRESOS", etc.
+        
+        await query.edit_message_text(f"⏳ Generando reporte **{tipo}** ({rango})...")
+        
+        # Llamamos al servicio con los dos datos
+        reporte = self.sheet_service.get_filtered_report(tipo, rango)
+        
+        # Mostramos resultado y volvemos a dejar el menú de tipos por si quiere ver otro
+        await query.edit_message_text(
+            reporte, 
+            parse_mode="Markdown", 
+            reply_markup=KeyboardBuilder.report_type_menu() # <--- Se queda aquí para ver otro reporte rápido
+        )
+        return BotStates.SELECT_REPORT_TYPE

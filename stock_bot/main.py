@@ -129,6 +129,12 @@ class StockBotApp:
                 BotStates.SEARCH_PRODUCT: [ 
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.flow_controller.search_product_received)
                 ],
+                BotStates.SELECT_REPORT_RANGE: [
+                    CallbackQueryHandler(self.flow_controller.report_range_selected)
+                ],
+                BotStates.SELECT_REPORT_TYPE: [
+                    CallbackQueryHandler(self.flow_controller.report_type_selected)
+                ],
             },
             fallbacks=[CommandHandler('start', self.flow_controller.start)]
         )

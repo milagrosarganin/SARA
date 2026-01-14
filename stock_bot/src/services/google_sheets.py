@@ -1,6 +1,7 @@
 import gspread
 from src.config import settings
 from datetime import datetime  # <--- ¡ESTO FALTABA! Sin esto no guarda la fecha.
+from datetime import datetime, timedelta
 
 class GoogleSheetService:
     def __init__(self):
@@ -278,3 +279,57 @@ class GoogleSheetService:
                 
             return msg
         except: return "Error leyendo ingresos."
+
+    # --- REPORTES FILTRADOS ---
+    def get_filtered_report(self, report_type, range_type):
+        """
+        report_type: 'INGRESOS', 'MOVIMIENTOS', 'FALTANTES'
+        range_type: 'DIARIO' (Hoy), 'SEMANAL' (Últimos 7 días)
+        """
+        try:
+            # 1. Definir fechas
+            today = datetime.now().date()
+            limit_date = today - timedelta(days=7) if range_type == 'SEMANAL' else today
+            
+            msg_header = f"📊 **REPORTE {range_type} - {report_type}**\n"
+            
+            # CASO A: FALTANTES (Siempre es el estado actual, no depende de fechas)
+            if report_type == 'FALTANTES':
+                return self.get_stock_report() # Tu función vieja que ya anda bien
+
+            # CASO B: MOVIMIENTOS (Historial)
+            if report_type == 'MOVIMIENTOS':
+                rows = self.worksheet_historial.get_all_values()[1:] # Saltamos header
+                filtered = []
+                for r in rows:
+                    # Asumimos fecha en Columna A (índice 0) formato YYYY-MM-DD
+                    try:
+                        row_date = datetime.strptime(r[0].split()[0], "%Y-%m-%d").date()
+                        if row_date >= limit_date:
+                            # Formato: Hora - Producto - Cantidad - Usuario
+                            hora = r[0].split()[1] if len(r[0].split()) > 1 else ""
+                            filtered.append(f"🔸 {hora} | {r[3]}: {r[5]} ({r[1]})")
+                    except: continue # Si la fecha está mal, la saltamos
+                
+                if not filtered: return msg_header + "No hubo movimientos."
+                return msg_header + "\n".join(reversed(filtered[-20:])) # Mostramos últimos 20
+
+            # CASO C: INGRESOS
+            if report_type == 'INGRESOS':
+                rows = self.worksheet_ingresos.get_all_values()[1:]
+                filtered = []
+                for r in rows:
+                    try:
+                        row_date = datetime.strptime(r[0], "%Y-%m-%d").date()
+                        if row_date >= limit_date:
+                            # Fecha - Producto - Cantidad - Proveedor
+                            filtered.append(f"🚚 {r[0]}: {r[7]}x {r[6]} ({r[5]})")
+                    except: continue
+
+                if not filtered: return msg_header + "No hubo ingresos."
+                return msg_header + "\n".join(reversed(filtered))
+
+            return "Reporte no reconocido."
+
+        except Exception as e:
+            return f"❌ Error generando reporte: {e}"

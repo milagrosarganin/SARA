@@ -81,3 +81,22 @@ class KeyboardBuilder:
             keyboard.append([InlineKeyboardButton(p, callback_data=f"PROV_{p[:50]}")])
         keyboard.append([InlineKeyboardButton("🔙 Volver", callback_data='BACK_MAIN')])
         return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def report_range_menu():
+        keyboard = [
+            [InlineKeyboardButton("📅 Hoy", callback_data="RANGO_DIARIO")],
+            [InlineKeyboardButton("🗓️ Esta Semana (7 días)", callback_data="RANGO_SEMANAL")],
+            [InlineKeyboardButton("🔙 Volver", callback_data="BACK_ADMIN")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def report_type_menu():
+        keyboard = [
+            [InlineKeyboardButton("📉 Faltantes (Stock Bajo)", callback_data="TYPE_FALTANTES")],
+            [InlineKeyboardButton("🚚 Ingresos", callback_data="TYPE_INGRESOS")],
+            [InlineKeyboardButton("🔄 Movimientos (Historial)", callback_data="TYPE_MOVIMIENTOS")],
+            [InlineKeyboardButton("🔙 Volver", callback_data="BACK_RANGE")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
