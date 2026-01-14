@@ -24,3 +24,4 @@ class BotStates:
     SELECT_SUPPLIER = 26  
     ASK_UNIT_PRICE = 27
     PREGUNTA_CONTINUAR = 28
+    SEARCH_PRODUCT = 29  

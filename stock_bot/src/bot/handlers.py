@@ -356,6 +356,15 @@ class StockFlowController:
                 return BotStates.SELECT_ACTION
             await query.edit_message_text("💸 ¿A quién pagamos?", reply_markup=KeyboardBuilder.provider_menu(provs))
             return BotStates.SELECT_PROVIDER_PAY
+
+        if action == 'VER_INGRESOS':
+            reporte = self.sheet_service.get_recent_incomes()
+            await query.edit_message_text(reporte, parse_mode='Markdown', reply_markup=KeyboardBuilder.admin_action_menu())
+            return BotStates.SELECT_ACTION
+
+        if action == 'BUSCAR_PRODUCTO':
+            await query.edit_message_text("🔍 Escribí el nombre del producto a buscar (ej: Coca):")
+            return BotStates.SEARCH_PRODUCT
             
         return BotStates.SELECT_ACTION
 
@@ -408,16 +417,28 @@ class StockFlowController:
         await query.answer()
         
         if query.data == 'SI':
-            # Volvemos a mostrar los sectores, pero el "sector_selected" recordará el nombre
-            user = context.user_data.get('nombre_usuario', 'Usuario')
+            # INTELIGENCIA: Si ya estaba en un sector, ¿para qué preguntarlo de nuevo?
+            # Podemos enviarlo directo a elegir Categoría del mismo sector.
+            
+            sector = context.user_data.get('sector')
+            cats = self.sheet_service.get_unique_categories(sector)
+            
             await query.edit_message_text(
-                f"👍 Dale {user}, ¿De qué sector sacamos ahora?", 
-                reply_markup=KeyboardBuilder.main_sector_menu()
+                f"🚀 **Modo Rápido**: Seguimos en **{sector}**.\nElegí Categoría:", 
+                reply_markup=KeyboardBuilder.category_menu(cats)
             )
-            return BotStates.SELECT_SECTOR
+            # Saltamos directo al paso 3 (Categoría) en vez del 1 (Sector)
+            return BotStates.SELECT_CATEGORY 
             
         else:
-            # Si dice NO, terminamos y limpiamos
-            context.user_data.clear() # Limpiamos para el próximo
-            await query.edit_message_text("👋 ¡Listo! Cerré tu sesión. Usá /start cuando vuelvas.")
+            context.user_data.clear()
+            await query.edit_message_text("👋 Sesión finalizada.")
             return ConversationHandler.END
+
+    async def search_product_received(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query_text = update.message.text
+        found, msg = self.sheet_service.get_product_details(query_text)
+        
+        # Le mostramos la info y le dejamos el menú de admin para seguir
+        await update.message.reply_text(msg, parse_mode='Markdown', reply_markup=KeyboardBuilder.admin_action_menu())
+        return BotStates.SELECT_ACTION

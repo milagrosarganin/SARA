@@ -214,3 +214,67 @@ class GoogleSheetService:
     def undo_last_movement(self, user_name):
         # Tu función undo...
         return False, "Función undo."
+
+    def get_product_details(self, product_name_query):
+        """Busca un producto y devuelve stock + últimos 3 movimientos"""
+        try:
+            # 1. Buscar en STOCK (Coincidencia parcial)
+            records = self.worksheet_stock.get_all_records()
+            # Filtramos productos que contengan el texto (ej: "Coca" encuentra "Coca Cola")
+            found = [p for p in records if product_name_query.lower() in str(p.get('PRODUCTO', '')).lower()]
+            
+            if not found:
+                return None, "❌ No encontré ningún producto con ese nombre."
+            
+            # Si hay muchos, devolvemos el primero o pedimos ser más especifico
+            prod = found[0] 
+            nombre_real = prod.get('PRODUCTO')
+            stock_actual = prod.get('STOCK ACTUAL')
+            
+            # 2. Buscar últimos 3 movimientos en HISTORIAL
+            historial = self.worksheet_historial.get_all_values() # Trae todo como lista
+            # Filas: [Fecha, Usuario, Sector, Producto, Tipo, Cantidad...]
+            # Indices: Fecha(0), User(1), Prod(3), Tipo(4), Cant(5)
+            
+            movimientos = []
+            # Recorremos de abajo hacia arriba (lo más nuevo primero)
+            for row in reversed(historial):
+                if row[3] == nombre_real: # Si coincide el nombre exacto
+                    movimientos.append(f"📅 {row[0]} | {row[1]}: {row[4]} {row[5]}")
+                    if len(movimientos) >= 5: break # Solo los últimos 5
+            
+            reporte = (
+                f"📦 **FICHA: {nombre_real}**\n"
+                f"📊 Stock Actual: **{stock_actual}**\n"
+                f"----------------------\n"
+                f"🕒 **Últimos Movimientos:**\n" + 
+                ("\n".join(movimientos) if movimientos else "No hay movimientos recientes.")
+            )
+            return True, reporte
+            
+        except Exception as e:
+            return False, f"Error buscando producto: {e}"
+
+    def get_recent_incomes(self, limit=5):
+        """Devuelve los últimos 5 ingresos registrados"""
+        try:
+            # Asumimos que la hoja INGRESOS tiene: Fecha, Monto, Usuario, Sector... Producto(6), Cantidad(7)
+            rows = self.worksheet_ingresos.get_all_values()
+            
+            # Saltamos el encabezado y vamos al final
+            data = rows[1:] 
+            if not data: return "No hay ingresos registrados."
+            
+            last_rows = data[-limit:] # Los últimos 'limit'
+            
+            msg = "🚚 **ÚLTIMOS INGRESOS**\n"
+            for r in reversed(last_rows):
+                # Ajusta los índices según tus columnas reales de la hoja INGRESOS
+                fecha = r[0]
+                prov = r[5] # Proveedor
+                prod = r[6] # Producto
+                cant = r[7] # Cantidad
+                msg += f"🔸 {fecha}: {cant}x {prod} ({prov})\n"
+                
+            return msg
+        except: return "Error leyendo ingresos."

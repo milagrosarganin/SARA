@@ -126,6 +126,9 @@ class StockBotApp:
                 BotStates.PREGUNTA_CONTINUAR: [
                     CallbackQueryHandler(self.flow_controller.decision_continuar_retiro)
                 ],
+                BotStates.SEARCH_PRODUCT: [ 
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.flow_controller.search_product_received)
+                ],
             },
             fallbacks=[CommandHandler('start', self.flow_controller.start)]
         )
