@@ -486,3 +486,88 @@ class StockFlowController:
             reply_markup=KeyboardBuilder.report_type_menu() # <--- Se queda aquí para ver otro reporte rápido
         )
         return BotStates.SELECT_REPORT_TYPE
+
+    # --- 1. MANEJO DE MENÚ ADMIN ---
+    async def handle_admin_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        action = query.data
+        
+        if action == 'START_PRODUCCION':
+            context.user_data['modo'] = 'PRODUCCION' # Marcamos el modo
+            context.user_data['sector'] = 'Cocina'   # Asumimos Cocina por defecto
+            
+            # Vamos directo a elegir Categoría
+            cats = self.sheet_service.get_unique_categories('Cocina')
+            await query.edit_message_text("🍳 **PRODUCCIÓN PROPIA**\nSeleccioná la Categoría:", reply_markup=KeyboardBuilder.category_menu(cats))
+            return BotStates.SELECT_CATEGORY
+
+        if action == 'START_MASIVO':
+            msg = (
+                "⚡ **INGRESAR VARIOS (Retiro Masivo)**\n\n"
+                "Pegá tu lista de productos abajo. El bot buscará los más parecidos.\n"
+                "Ejemplo:\n"
+                "3 pan hambur\n40 mila carne\n10 mila pollo"
+            )
+            await query.edit_message_text(msg, parse_mode='Markdown')
+            return BotStates.INPUT_BATCH_LIST
+
+        # ... (Mantén el resto de tus ifs: INGRESAR_STOCK, BUSCAR_PRODUCTO, etc.) ...
+        
+        # Si nada coincide:
+        return BotStates.SELECT_ACTION
+
+    # --- 2. LÓGICA DE CANTIDAD (Modificada para Producción) ---
+    async def quantity_received(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message.text.isdigit():
+            await update.message.reply_text("⛔ Solo números.")
+            return BotStates.INPUT_QUANTITY
+        
+        cantidad = int(update.message.text)
+        modo = context.user_data.get('modo')
+        
+        # CASO A: PRODUCCIÓN PROPIA (Nuevo)
+        if modo == 'PRODUCCION':
+            prod = context.user_data['producto']
+            user = update.effective_user.first_name
+            
+            # 1. Guardamos como INGRESO pero sin pedir proveedor/precio
+            self.sheet_service.register_movement(user, "Cocina", prod, cantidad, "Producción Propia")
+            exito, _, stock, _, _ = self.sheet_service.update_stock(prod, cantidad, mode='INGRESO')
+            
+            await update.message.reply_text(f"✅ Producción guardada: **{prod}** (+{cantidad})\nStock Nuevo: {stock}", parse_mode='Markdown')
+            
+            # Preguntamos si sigue
+            await update.message.reply_text("¿Cargaste algo más de Producción?", reply_markup=KeyboardBuilder.yes_no_menu())
+            return BotStates.CONFIRM_MORE_PRODUCCION
+
+        # ... (Mantén aquí tu lógica anterior para 'INGRESO' normal y 'RETIRO' normal) ...
+        # (Si no sabes cómo combinarlo, avísame y te paso la función completa)
+
+    # --- 3. LOOP DE PRODUCCIÓN ---
+    async def confirm_more_production(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        
+        if query.data == 'SI':
+            # Vuelve a pedir Categoría (Loop)
+            cats = self.sheet_service.get_unique_categories('Cocina')
+            await query.edit_message_text("🍳 Sigamos. ¿Qué Categoría?", reply_markup=KeyboardBuilder.category_menu(cats))
+            return BotStates.SELECT_CATEGORY
+        else:
+            context.user_data.clear()
+            await query.edit_message_text("👋 Ingreso de Elaboración Propia TERMINADO.")
+            return ConversationHandler.END
+
+    # --- 4. PROCESAR LISTA MASIVA ---
+    async def process_batch_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text = update.message.text
+        user = update.effective_user.first_name
+        
+        await update.message.reply_text("⏳ Procesando lista... (Buscando coincidencias)")
+        
+        reporte = self.sheet_service.process_batch_withdrawal(text, user)
+        
+        if len(reporte) > 4000: reporte = reporte[:4000]
+        await update.message.reply_text(reporte, reply_markup=KeyboardBuilder.admin_action_menu())
+        return BotStates.SELECT_ACTION

@@ -2,6 +2,8 @@ import gspread
 from src.config import settings
 from datetime import datetime  # <--- ¡ESTO FALTABA! Sin esto no guarda la fecha.
 from datetime import datetime, timedelta
+import difflib
+import re
 
 class GoogleSheetService:
     def __init__(self):
@@ -333,3 +335,51 @@ class GoogleSheetService:
 
         except Exception as e:
             return f"❌ Error generando reporte: {e}"
+
+    # --- RETIRO MASIVO INTELIGENTE ---
+    def process_batch_withdrawal(self, raw_text, user_name):
+        log = ["⚡ **RETIRO MASIVO PROCESADO**"]
+        not_found = []
+        
+        try:
+            records = self.worksheet_stock.get_all_records()
+            # Creamos una lista solo con los nombres para comparar
+            all_products = [str(r.get('PRODUCTO')) for r in records if r.get('PRODUCTO')]
+        except: return "❌ Error leyendo base de datos."
+
+        lines = raw_text.split('\n')
+        for line in lines:
+            line = line.strip()
+            if not line: continue
+            
+            # Buscamos número al principio (Ej: "40 Mila carne")
+            match = re.match(r"(\d+[\.,]?\d*)\s+(.*)", line)
+            
+            if match:
+                qty_raw = match.group(1)
+                name_raw = match.group(2).strip()
+                cantidad = self._clean_number(qty_raw)
+                
+                # BUSQUEDA DE PARECIDOS (Fuzzy Match)
+                # cutoff=0.6 significa 60% de coincidencia. 
+                # Si ponemos 0.9 (90%) fallará mucho con abreviaturas como "hambur" vs "hamburguesa".
+                matches = difflib.get_close_matches(name_raw, all_products, n=1, cutoff=0.6)
+                
+                if matches:
+                    real_name = matches[0]
+                    # Registramos Retiro
+                    self.register_movement(user_name, "Varios", real_name, -cantidad, "Retiro Masivo")
+                    self.update_stock(real_name, int(cantidad), mode='RETIRO')
+                    log.append(f"✅ {real_name}: -{int(cantidad)}")
+                else:
+                    not_found.append(f"❓ {name_raw}")
+            else:
+                # Si no empieza con número, lo ignoramos o avisamos
+                pass
+        
+        # Armamos el reporte final
+        msg = "\n".join(log)
+        if not_found:
+            msg += "\n\n⚠️ **NO ENCONTRÉ ESTOS (Hacelos manual):**\n" + "\n".join(not_found)
+            
+        return msg

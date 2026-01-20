@@ -135,6 +135,12 @@ class StockBotApp:
                 BotStates.SELECT_REPORT_TYPE: [
                     CallbackQueryHandler(self.flow_controller.report_type_selected)
                 ],
+                BotStates.INPUT_BATCH_LIST: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.flow_controller.process_batch_list)
+                ],
+                BotStates.CONFIRM_MORE_PRODUCCION: [
+                    CallbackQueryHandler(self.flow_controller.confirm_more_production)
+                ],
             },
             fallbacks=[CommandHandler('start', self.flow_controller.start)]
         )

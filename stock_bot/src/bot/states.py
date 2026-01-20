@@ -27,3 +27,6 @@ class BotStates:
     SEARCH_PRODUCT = 29  
     SELECT_REPORT_RANGE = 30 
     SELECT_REPORT_TYPE = 31
+    # ... al final de la lista ...
+    INPUT_BATCH_LIST = 35
+    CONFIRM_MORE_PRODUCCION = 36

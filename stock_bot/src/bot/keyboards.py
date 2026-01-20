@@ -19,12 +19,14 @@ class KeyboardBuilder:
     @staticmethod
     def admin_action_menu():
         keyboard = [
-            [InlineKeyboardButton("📥 Ingresar Stock", callback_data="INGRESAR_STOCK")],
-            [InlineKeyboardButton("🚚 Hacer Pedido", callback_data="HACER_PEDIDO")],
-            [InlineKeyboardButton("💸 Registrar Pago", callback_data="REGISTRAR_PAGO")],
+            # Botón 1: Producción (Paso a paso)
+            [InlineKeyboardButton("🍳 Ingresar Producción Propia", callback_data="START_PRODUCCION")],
+            # Botón 2: Retiro Masivo (Lista)
+            [InlineKeyboardButton("⚡ Ingresar Varios (Lista)", callback_data="START_MASIVO")],
+            
+            [InlineKeyboardButton("📥 Ingresar Stock (Proveedor)", callback_data="INGRESAR_STOCK")],
             [InlineKeyboardButton("🔍 Buscar Producto (Visor)", callback_data="BUSCAR_PRODUCTO")],
-            [InlineKeyboardButton("📋 Ver Últimos Ingresos", callback_data="VER_INGRESOS")],
-            [InlineKeyboardButton("📊 Reportes Diarios", callback_data="VER_REPORTES")],
+            [InlineKeyboardButton("📊 Reportes", callback_data="VER_REPORTES")],
             [InlineKeyboardButton("🔙 Volver", callback_data="BACK_MAIN")]
         ]
         return InlineKeyboardMarkup(keyboard)
