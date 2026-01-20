@@ -215,8 +215,59 @@ class GoogleSheetService:
         return "Reporte diario..."
 
     def undo_last_movement(self, user_name):
-        # Tu función undo...
-        return False, "Función undo."
+        """Deshace el último movimiento realizado por el usuario específico."""
+        try:
+            # 1. Traemos todo el historial
+            rows = self.worksheet_historial.get_all_values()
+            
+            # 2. Buscamos de abajo hacia arriba (del más nuevo al más viejo)
+            last_row_index = -1
+            last_row_data = None
+            
+            # Empezamos desde el final (len(rows)-1) hasta 1 (saltando el header 0)
+            for i in range(len(rows) - 1, 0, -1):
+                # La columna B (índice 1) es el USUARIO
+                if len(rows[i]) > 1 and rows[i][1] == user_name:
+                    last_row_index = i # Guardamos el índice real (0-based)
+                    last_row_data = rows[i]
+                    break
+            
+            if last_row_index == -1:
+                return False, "No encontré movimientos recientes tuyos para deshacer."
+
+            # 3. Leemos los datos de esa fila
+            # Indices: Fecha(0), Usuario(1), Sector(2), Producto(3), Tipo(4), Cantidad(5)
+            producto = last_row_data[3]
+            try:
+                # La cantidad en historial puede ser "-5" (texto). La pasamos a número.
+                cantidad_historial = int(float(last_row_data[5]))
+            except:
+                return False, "Error: La cantidad en el historial no es un número válido."
+
+            # 4. Invertimos la operación en STOCK
+            # Si en historial dice -5 (fue retiro), tenemos que SUMAR 5.
+            # Si en historial dice 50 (fue ingreso), tenemos que RESTAR 50.
+            
+            cantidad_a_corregir = abs(cantidad_historial)
+            
+            if cantidad_historial < 0:
+                # Era negativo (Retiro) -> Ahora hacemos un INGRESO para devolverlo
+                modo_correccion = 'INGRESO'
+            else:
+                # Era positivo (Ingreso) -> Ahora hacemos un RETIRO para sacarlo
+                modo_correccion = 'RETIRO'
+
+            # Ejecutamos la corrección de stock
+            self.update_stock(producto, cantidad_a_corregir, mode=modo_correccion)
+
+            # 5. Borramos la fila del Historial
+            # gspread usa índices que empiezan en 1, así que sumamos 1
+            self.worksheet_historial.delete_rows(last_row_index + 1)
+
+            return True, f"Deshice: {producto} ({cantidad_historial})"
+
+        except Exception as e:
+            return False, f"Error técnico al deshacer: {e}"
 
     def get_product_details(self, product_name_query):
         """Busca un producto y devuelve stock + últimos 3 movimientos"""
@@ -336,15 +387,17 @@ class GoogleSheetService:
         except Exception as e:
             return f"❌ Error generando reporte: {e}"
 
-    # --- RETIRO MASIVO INTELIGENTE ---
+    # --- RETIRO MASIVO TODO TERRENO (Versión Final) ---
     def process_batch_withdrawal(self, raw_text, user_name):
         log = ["⚡ **RETIRO MASIVO PROCESADO**"]
         not_found = []
         
         try:
             records = self.worksheet_stock.get_all_records()
-            # Creamos una lista solo con los nombres para comparar
-            all_products = [str(r.get('PRODUCTO')) for r in records if r.get('PRODUCTO')]
+            # TRUCO 1: Convertimos todo a MAYÚSCULAS para que "mila" coincida con "MILA"
+            # Guardamos tuplas (Nombre Original, Nombre Mayúsculas)
+            all_products_map = {str(r.get('PRODUCTO')).strip().upper(): str(r.get('PRODUCTO')) for r in records if r.get('PRODUCTO')}
+            all_products_upper = list(all_products_map.keys())
         except: return "❌ Error leyendo base de datos."
 
         lines = raw_text.split('\n')
@@ -352,34 +405,61 @@ class GoogleSheetService:
             line = line.strip()
             if not line: continue
             
-            # Buscamos número al principio (Ej: "40 Mila carne")
+            # 1. Separar Cantidad de Nombre (Ej: "10 mila pollo")
             match = re.match(r"(\d+[\.,]?\d*)\s+(.*)", line)
             
             if match:
                 qty_raw = match.group(1)
-                name_raw = match.group(2).strip()
+                name_raw = match.group(2).strip().upper() # Pasamos lo escrito a MAYÚSCULAS
                 cantidad = self._clean_number(qty_raw)
                 
-                # BUSQUEDA DE PARECIDOS (Fuzzy Match)
-                # cutoff=0.6 significa 60% de coincidencia. 
-                # Si ponemos 0.9 (90%) fallará mucho con abreviaturas como "hambur" vs "hamburguesa".
-                matches = difflib.get_close_matches(name_raw, all_products, n=1, cutoff=0.6)
+                real_name_upper = None
+                
+                # --- ESTRATEGIA 1: Búsqueda por Parecido (Fuzzy) ---
+                # cutoff=0.4 significa que aceptamos hasta un 40% de coincidencia (muy flexible)
+                matches = difflib.get_close_matches(name_raw, all_products_upper, n=1, cutoff=0.4)
                 
                 if matches:
-                    real_name = matches[0]
-                    # Registramos Retiro
-                    self.register_movement(user_name, "Varios", real_name, -cantidad, "Retiro Masivo")
-                    self.update_stock(real_name, int(cantidad), mode='RETIRO')
-                    log.append(f"✅ {real_name}: -{int(cantidad)}")
+                    real_name_upper = matches[0]
                 else:
-                    not_found.append(f"❓ {name_raw}")
+                    # --- ESTRATEGIA 2: Búsqueda por Palabras Clave (Plan B) ---
+                    # Si escribiste "Mila Pollo", buscamos nombres que contengan "MILA" y "POLLO"
+                    words = name_raw.split()
+                    best_score = 0
+                    best_candidate = None
+                    
+                    for prod_upper in all_products_upper:
+                        score = 0
+                        for word in words:
+                            # Ignoramos palabras cortas como "de", "la", "x"
+                            if len(word) < 3: continue
+                            if word in prod_upper: 
+                                score += 1
+                        
+                        # Si encontramos más coincidencias que el anterior, ese es el nuevo candidato
+                        if score > best_score:
+                            best_score = score
+                            best_candidate = prod_upper
+                    
+                    # Si encontramos algo con al menos 1 palabra clave fuerte
+                    if best_candidate and best_score >= 1:
+                        real_name_upper = best_candidate
+
+                # --- RESULTADO ---
+                if real_name_upper:
+                    real_name_original = all_products_map[real_name_upper] # Recuperamos el nombre bonito
+                    
+                    # Guardamos
+                    self.register_movement(user_name, "Varios", real_name_original, -cantidad, "Retiro Masivo")
+                    self.update_stock(real_name_original, int(cantidad), mode='RETIRO')
+                    log.append(f"✅ {real_name_original}: -{int(cantidad)}")
+                else:
+                    not_found.append(f"❓ {match.group(2)} (No entendí qué es)")
             else:
-                # Si no empieza con número, lo ignoramos o avisamos
-                pass
+                pass # Ignoramos líneas que no empiezan con números
         
-        # Armamos el reporte final
         msg = "\n".join(log)
         if not_found:
-            msg += "\n\n⚠️ **NO ENCONTRÉ ESTOS (Hacelos manual):**\n" + "\n".join(not_found)
+            msg += "\n\n⚠️ **NO ENCONTRÉ ESTOS:**\n" + "\n".join(not_found)
             
         return msg

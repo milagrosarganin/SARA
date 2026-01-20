@@ -131,47 +131,52 @@ class StockFlowController:
             return BotStates.INPUT_QUANTITY
             
         cantidad = int(update.message.text)
+        modo = context.user_data.get('modo')
         
-        # --- CAMINO A: INGRESO DE MERCADERÍA ---
-        if context.user_data.get('modo') == 'INGRESO':
+        # --- CASO A: PRODUCCIÓN PROPIA (NUEVO) ---
+        if modo == 'PRODUCCION':
+            prod = context.user_data['producto']
+            user = update.effective_user.first_name
+            
+            # Guardamos como INGRESO especial
+            self.sheet_service.register_movement(user, "Cocina", prod, cantidad, "Producción Propia")
+            exito, _, stock, _, _ = self.sheet_service.update_stock(prod, cantidad, mode='INGRESO')
+            
+            await update.message.reply_text(f"✅ Producción: **{prod}** (+{cantidad})\nStock Nuevo: {stock}", parse_mode='Markdown')
+            await update.message.reply_text("¿Cargaste algo más de Producción?", reply_markup=KeyboardBuilder.yes_no_menu())
+            return BotStates.CONFIRM_MORE_PRODUCCION
+
+        # --- CASO B: INGRESO DE PROVEEDOR ---
+        if modo == 'INGRESO':
             context.user_data['temp_cantidad'] = cantidad
-            await update.message.reply_text("📅 ¿Cuál es la **FECHA DE VENCIMIENTO**? (o escribí 'NO'):")
+            await update.message.reply_text("📅 ¿Fecha de VENCIMIENTO? (o escribí 'NO'):")
             return BotStates.ASK_EXPIRATION
         
-        # --- CAMINO B: RETIRO DE MERCADERÍA ---
+        # --- CASO C: RETIRO NORMAL (EMPLEADOS) ---
         else:
             user = context.user_data.get('nombre_usuario', 'Anónimo') 
             prod = context.user_data['producto']
             local = context.user_data.get('local', 'Desconocido')
             sector = context.user_data['sector']
             
-            # 1. Registrar Historial
+            # 1. Historial
             self.sheet_service.register_movement(user, sector, prod, -cantidad, local)
-            
-            # 2. Actualizar Stock
+            # 2. Stock
             exito, alerta, stock, minimo, _ = self.sheet_service.update_stock(prod, cantidad, mode='RETIRO')
             
-            msg = f"✅ Retiro Registrado.\nQuedan: {stock}" if exito else "⚠️ Error técnico, pero se guardó en historial."
+            msg = f"✅ Retiro Registrado.\nQuedan: {stock}" if exito else "⚠️ Error técnico."
             
-            # 3. Alerta de Stock Bajo
-            if alerta:
-                # ... (tu código de alerta igual que antes) ...
-                if settings.ID_GRUPO_ALERTAS:
-                    try:
-                        alert_msg = f"🚨 **ALERTA**\n{prod} bajo mínimo ({stock})"
-                        await context.bot.send_message(chat_id=settings.ID_GRUPO_ALERTAS, text=alert_msg)
-                    except: pass
+            # Alertas
+            if alerta and settings.ID_GRUPO_ALERTAS:
+                try:
+                    await context.bot.send_message(chat_id=settings.ID_GRUPO_ALERTAS, text=f"🚨 **ALERTA**\n{prod} bajo mínimo ({stock})")
+                except: pass
 
             await update.message.reply_text(msg)
             
-            # --- AQUÍ CAMBIA: PREGUNTA BUCLE ---
+            # Bucle rápido
             context.user_data['modo'] = 'RETIRO' 
-            
-            # Usamos el menú SI/NO para preguntar si sigue
-            await update.message.reply_text(
-                "🔄 **¿Necesitás retirar algo más?**", 
-                reply_markup=KeyboardBuilder.yes_no_menu()
-            )
+            await update.message.reply_text("🔄 ¿Querés retirar algo más?", reply_markup=KeyboardBuilder.yes_no_menu())
             return BotStates.PREGUNTA_CONTINUAR
 
     # --- FLUJO DE INGRESO: VENCIMIENTO Y PRECIO (NUEVO) ---
@@ -324,30 +329,38 @@ class StockFlowController:
         await update.message.reply_text("⚠️ Tocá los botones de arriba.")
         return BotStates.ASK_INVOICE_TYPE
 
-    # --- ADMIN / PAGOS ---
     async def handle_admin_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
         action = query.data
-        if action == 'BACK_MAIN': return await self.start(update, context)
         
-        if action == 'VER_REPORTES':
-            await query.edit_message_text(
-                "📅 **REPORTES**\nPrimero, seleccioná el período:", 
-                reply_markup=KeyboardBuilder.report_range_menu() # <--- Menú nuevo 1
-            )
-            return BotStates.SELECT_REPORT_RANGE
-            
+        # --- 1. PRODUCCIÓN PROPIA (NUEVO) ---
+        if action == 'START_PRODUCCION':
+            context.user_data['modo'] = 'PRODUCCION'
+            context.user_data['sector'] = 'Cocina'
+            cats = self.sheet_service.get_unique_categories('Cocina')
+            await query.edit_message_text("🍳 **PRODUCCIÓN PROPIA**\nSeleccioná la Categoría:", reply_markup=KeyboardBuilder.category_menu(cats))
+            return BotStates.SELECT_CATEGORY
+
+        # --- 2. RETIRO MASIVO (NUEVO) ---
+        if action == 'START_MASIVO':
+            msg = "⚡ **INGRESAR VARIOS (Retiro Masivo)**\nPegá tu lista de productos abajo.\nEj:\n3 pan hambur\n40 mila carne"
+            await query.edit_message_text(msg, parse_mode='Markdown')
+            return BotStates.INPUT_BATCH_LIST
+
+        # --- 3. INGRESAR STOCK ---
         if action == 'INGRESAR_STOCK':
             context.user_data['next_action'] = 'INGRESAR'
             await query.edit_message_text("🔐 PIN Encargado:")
             return BotStates.CHECK_PIN
             
+        # --- 4. HACER PEDIDO ---
         if action == 'HACER_PEDIDO':
             context.user_data['next_action'] = 'PEDIDO'
             await query.edit_message_text("🔐 PIN Pedidos:")
             return BotStates.CHECK_PIN 
         
+        # --- 5. REGISTRAR PAGO ---
         if action == 'REGISTRAR_PAGO':
             provs = self.sheet_service.get_suppliers_list()
             if not provs: 
@@ -356,17 +369,24 @@ class StockFlowController:
             await query.edit_message_text("💸 ¿A quién pagamos?", reply_markup=KeyboardBuilder.provider_menu(provs))
             return BotStates.SELECT_PROVIDER_PAY
 
+        # --- 6. VISOR Y REPORTES ---
+        if action == 'BUSCAR_PRODUCTO':
+            await query.edit_message_text("🔍 Escribí el nombre del producto:")
+            return BotStates.SEARCH_PRODUCT
+            
+        if action == 'VER_REPORTES':
+            await query.edit_message_text("📅 **REPORTES**\nSeleccioná el período:", reply_markup=KeyboardBuilder.report_range_menu())
+            return BotStates.SELECT_REPORT_RANGE
+
         if action == 'VER_INGRESOS':
             reporte = self.sheet_service.get_recent_incomes()
             await query.edit_message_text(reporte, parse_mode='Markdown', reply_markup=KeyboardBuilder.admin_action_menu())
             return BotStates.SELECT_ACTION
 
-        if action == 'BUSCAR_PRODUCTO':
-            await query.edit_message_text("🔍 Escribí el nombre del producto a buscar (ej: Coca):")
-            return BotStates.SEARCH_PRODUCT
+        if action == 'BACK_MAIN': 
+            return await self.start(update, context)
             
         return BotStates.SELECT_ACTION
-
     async def verify_pin(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.message.text in [settings.PIN_ENCARGADO, settings.PIN_ADMIN]:
             # Opción Pedido
@@ -487,64 +507,6 @@ class StockFlowController:
         )
         return BotStates.SELECT_REPORT_TYPE
 
-    # --- 1. MANEJO DE MENÚ ADMIN ---
-    async def handle_admin_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        await query.answer()
-        action = query.data
-        
-        if action == 'START_PRODUCCION':
-            context.user_data['modo'] = 'PRODUCCION' # Marcamos el modo
-            context.user_data['sector'] = 'Cocina'   # Asumimos Cocina por defecto
-            
-            # Vamos directo a elegir Categoría
-            cats = self.sheet_service.get_unique_categories('Cocina')
-            await query.edit_message_text("🍳 **PRODUCCIÓN PROPIA**\nSeleccioná la Categoría:", reply_markup=KeyboardBuilder.category_menu(cats))
-            return BotStates.SELECT_CATEGORY
-
-        if action == 'START_MASIVO':
-            msg = (
-                "⚡ **INGRESAR VARIOS (Retiro Masivo)**\n\n"
-                "Pegá tu lista de productos abajo. El bot buscará los más parecidos.\n"
-                "Ejemplo:\n"
-                "3 pan hambur\n40 mila carne\n10 mila pollo"
-            )
-            await query.edit_message_text(msg, parse_mode='Markdown')
-            return BotStates.INPUT_BATCH_LIST
-
-        # ... (Mantén el resto de tus ifs: INGRESAR_STOCK, BUSCAR_PRODUCTO, etc.) ...
-        
-        # Si nada coincide:
-        return BotStates.SELECT_ACTION
-
-    # --- 2. LÓGICA DE CANTIDAD (Modificada para Producción) ---
-    async def quantity_received(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not update.message.text.isdigit():
-            await update.message.reply_text("⛔ Solo números.")
-            return BotStates.INPUT_QUANTITY
-        
-        cantidad = int(update.message.text)
-        modo = context.user_data.get('modo')
-        
-        # CASO A: PRODUCCIÓN PROPIA (Nuevo)
-        if modo == 'PRODUCCION':
-            prod = context.user_data['producto']
-            user = update.effective_user.first_name
-            
-            # 1. Guardamos como INGRESO pero sin pedir proveedor/precio
-            self.sheet_service.register_movement(user, "Cocina", prod, cantidad, "Producción Propia")
-            exito, _, stock, _, _ = self.sheet_service.update_stock(prod, cantidad, mode='INGRESO')
-            
-            await update.message.reply_text(f"✅ Producción guardada: **{prod}** (+{cantidad})\nStock Nuevo: {stock}", parse_mode='Markdown')
-            
-            # Preguntamos si sigue
-            await update.message.reply_text("¿Cargaste algo más de Producción?", reply_markup=KeyboardBuilder.yes_no_menu())
-            return BotStates.CONFIRM_MORE_PRODUCCION
-
-        # ... (Mantén aquí tu lógica anterior para 'INGRESO' normal y 'RETIRO' normal) ...
-        # (Si no sabes cómo combinarlo, avísame y te paso la función completa)
-
-    # --- 3. LOOP DE PRODUCCIÓN ---
     async def confirm_more_production(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
