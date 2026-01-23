@@ -30,3 +30,4 @@ class BotStates:
     # ... al final de la lista ...
     INPUT_BATCH_LIST = 35
     CONFIRM_MORE_PRODUCCION = 36
+    SELECT_UNDO = 38

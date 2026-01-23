@@ -22,3 +22,5 @@ class Settings:
         return bool(self.TELEGRAM_TOKEN)
 
 settings = Settings()
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")

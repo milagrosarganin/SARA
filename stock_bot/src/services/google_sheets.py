@@ -4,13 +4,14 @@ from datetime import datetime  # <--- ¡ESTO FALTABA! Sin esto no guarda la fech
 from datetime import datetime, timedelta
 import difflib
 import re
+from src.services.ai_service import AIService
 
 class GoogleSheetService:
     def __init__(self):
         # --- CHIVATO DE DEBUG ---
         print(f"👀 OJO: Intentando abrir la hoja llamada: '{settings.GOOGLE_SHEET_NAME}'")
         # ------------------------
-
+        self.ai_service = AIService()   
         self.gc = gspread.service_account(filename='credenciales.json')
         self.sh = self.gc.open(settings.GOOGLE_SHEET_NAME)
         
@@ -58,18 +59,38 @@ class GoogleSheetService:
     def get_unique_categories(self, sector):
         try:
             records = self.worksheet_stock.get_all_records()
-            cats = set()
-            for p in records:
-                if sector.upper() in str(p.get('SECTOR', '')).strip().upper():
-                    if p.get('CATEGORIA'): cats.add(str(p['CATEGORIA']))
-            return list(cats)
+            categories = set()
+            for row in records:
+                # Si el sector es 'TODOS', agarramos todo. Si no, filtramos.
+                if sector == 'TODOS' or str(row['SECTOR']).strip().upper() == sector.upper():
+                    if row['CATEGORIA']: 
+                        categories.add(row['CATEGORIA'])
+            return sorted(list(categories))
         except: return []
 
     def get_products_by_category(self, sector, category):
         try:
             records = self.worksheet_stock.get_all_records()
-            return [p for p in records if sector.upper() in str(p.get('SECTOR','')).upper() and str(p.get('CATEGORIA','')).upper() == category.upper()]
+            products = []
+            for row in records:
+                # Filtro doble: Sector (o Todos) y Categoría
+                match_sector = (sector == 'TODOS') or (str(row['SECTOR']).strip().upper() == sector.upper())
+                match_cat = str(row['CATEGORIA']).strip().upper() == category.upper()
+                
+                if match_sector and match_cat:
+                    products.append(row['PRODUCTO'])
+            return sorted(products)
         except: return []
+
+    def get_product_sector(self, product_name):
+        """Busca a qué sector pertenece realmente un producto"""
+        try:
+            records = self.worksheet_stock.get_all_records()
+            for row in records:
+                if str(row['PRODUCTO']).strip().upper() == product_name.strip().upper():
+                    return row['SECTOR'] # Devuelve 'Cocina', 'Barra', etc.
+            return "General" # Por defecto si falla
+        except: return "General"
 
     # --- MOVIMIENTOS ---
     def register_movement(self, user_name, sector, product_name, quantity, local):
@@ -388,78 +409,99 @@ class GoogleSheetService:
             return f"❌ Error generando reporte: {e}"
 
     # --- RETIRO MASIVO TODO TERRENO (Versión Final) ---
+    # --- RETIRO MASIVO CON INTELIGENCIA ARTIFICIAL (GROQ) ---
     def process_batch_withdrawal(self, raw_text, user_name):
-        log = ["⚡ **RETIRO MASIVO PROCESADO**"]
+        log = ["⚡ **RETIRO INTELIGENTE (IA)**"]
         not_found = []
         
         try:
+            # 1. Obtenemos lista limpia de productos
             records = self.worksheet_stock.get_all_records()
-            # TRUCO 1: Convertimos todo a MAYÚSCULAS para que "mila" coincida con "MILA"
-            # Guardamos tuplas (Nombre Original, Nombre Mayúsculas)
-            all_products_map = {str(r.get('PRODUCTO')).strip().upper(): str(r.get('PRODUCTO')) for r in records if r.get('PRODUCTO')}
-            all_products_upper = list(all_products_map.keys())
+            all_products = [str(r.get('PRODUCTO')).strip() for r in records if r.get('PRODUCTO')]
         except: return "❌ Error leyendo base de datos."
 
-        lines = raw_text.split('\n')
-        for line in lines:
-            line = line.strip()
-            if not line: continue
-            
-            # 1. Separar Cantidad de Nombre (Ej: "10 mila pollo")
-            match = re.match(r"(\d+[\.,]?\d*)\s+(.*)", line)
-            
-            if match:
-                qty_raw = match.group(1)
-                name_raw = match.group(2).strip().upper() # Pasamos lo escrito a MAYÚSCULAS
-                cantidad = self._clean_number(qty_raw)
-                
-                real_name_upper = None
-                
-                # --- ESTRATEGIA 1: Búsqueda por Parecido (Fuzzy) ---
-                # cutoff=0.4 significa que aceptamos hasta un 40% de coincidencia (muy flexible)
-                matches = difflib.get_close_matches(name_raw, all_products_upper, n=1, cutoff=0.4)
-                
-                if matches:
-                    real_name_upper = matches[0]
-                else:
-                    # --- ESTRATEGIA 2: Búsqueda por Palabras Clave (Plan B) ---
-                    # Si escribiste "Mila Pollo", buscamos nombres que contengan "MILA" y "POLLO"
-                    words = name_raw.split()
-                    best_score = 0
-                    best_candidate = None
-                    
-                    for prod_upper in all_products_upper:
-                        score = 0
-                        for word in words:
-                            # Ignoramos palabras cortas como "de", "la", "x"
-                            if len(word) < 3: continue
-                            if word in prod_upper: 
-                                score += 1
-                        
-                        # Si encontramos más coincidencias que el anterior, ese es el nuevo candidato
-                        if score > best_score:
-                            best_score = score
-                            best_candidate = prod_upper
-                    
-                    # Si encontramos algo con al menos 1 palabra clave fuerte
-                    if best_candidate and best_score >= 1:
-                        real_name_upper = best_candidate
-
-                # --- RESULTADO ---
-                if real_name_upper:
-                    real_name_original = all_products_map[real_name_upper] # Recuperamos el nombre bonito
-                    
-                    # Guardamos
-                    self.register_movement(user_name, "Varios", real_name_original, -cantidad, "Retiro Masivo")
-                    self.update_stock(real_name_original, int(cantidad), mode='RETIRO')
-                    log.append(f"✅ {real_name_original}: -{int(cantidad)}")
-                else:
-                    not_found.append(f"❓ {match.group(2)} (No entendí qué es)")
-            else:
-                pass # Ignoramos líneas que no empiezan con números
+        # 2. Llamamos a Groq para que piense
+        resultado_ai = self.ai_service.match_products_smart(raw_text, all_products)
         
+        if not resultado_ai or 'movimientos' not in resultado_ai:
+            return "⚠️ La IA no pudo procesar la lista. Intentá de nuevo o escribí más claro."
+
+        # 3. Procesamos lo que dijo la IA
+        for item in resultado_ai['movimientos']:
+            producto = item.get('producto_oficial')
+            cantidad = item.get('cantidad')
+            original = item.get('input_original')
+
+            if producto and cantidad:
+                # La IA encontró el producto exacto, procedemos
+                self.register_movement(user_name, "Varios", producto, -cantidad, "Retiro Masivo IA")
+                self.update_stock(producto, int(cantidad), mode='RETIRO')
+                log.append(f"✅ {producto}: -{cantidad}")
+            else:
+                # La IA dijo null
+                not_found.append(f"❓ {original}")
+
         msg = "\n".join(log)
         if not_found:
-            msg += "\n\n⚠️ **NO ENCONTRÉ ESTOS:**\n" + "\n".join(not_found)
+            msg += "\n\n⚠️ **NO ENTENDÍ ESTOS:**\n" + "\n".join(not_found)
             
         return msg
+
+    def get_last_user_movements(self, user_name, limit=5):
+        """Devuelve los últimos movimientos del usuario con su número de fila real."""
+        try:
+            rows = self.worksheet_historial.get_all_values()
+            user_moves = []
+            
+            # Recorremos de abajo hacia arriba (lo más nuevo primero)
+            # enumerate(rows, 1) nos da el índice real de la fila en Excel (empezando en 1)
+            for index, row in reversed(list(enumerate(rows, 1))):
+                if len(user_moves) >= limit: break
+                
+                # Fila vacía o muy corta, ignorar
+                if len(row) < 4: continue
+
+                # row[1] es Usuario. Si coincide, lo guardamos.
+                if row[1].strip().upper() == user_name.strip().upper():
+                    # Guardamos: ID_FILA, FECHA, PRODUCTO, CANTIDAD
+                    # Formato row: Fecha(0), User(1), Sector(2), Prod(3), Tipo(4), Cant(5)
+                    user_moves.append({
+                        'row_id': index,
+                        'fecha': row[0].split()[1] if len(row[0].split()) > 1 else row[0], # Solo la hora si es posible
+                        'producto': row[3],
+                        'cantidad': row[5]
+                    })
+            
+            return user_moves
+        except: return []
+
+    def undo_specific_row(self, row_id):
+        """Borra una fila específica dada su ID y devuelve el stock."""
+        try:
+            # 1. Leemos la fila antes de borrar para saber qué producto era
+            # gspread usa índices base-1. 
+            # OJO: row_id viene como string del botón, hay que pasarlo a int
+            row_index = int(row_id)
+            
+            # Obtenemos valores de esa fila específica
+            row_values = self.worksheet_historial.row_values(row_index)
+            
+            if not row_values: return False, "Esa fila ya no existe."
+
+            producto = row_values[3]
+            try:
+                cantidad_historial = int(float(row_values[5]))
+            except: return False, "Error leyendo cantidad."
+
+            # 2. Corregimos Stock (Inverso)
+            cantidad_a_corregir = abs(cantidad_historial)
+            modo_correccion = 'INGRESO' if cantidad_historial < 0 else 'RETIRO'
+            
+            self.update_stock(producto, cantidad_a_corregir, mode=modo_correccion)
+
+            # 3. Borramos la fila
+            self.worksheet_historial.delete_rows(row_index)
+
+            return True, f"Deshice: {producto} ({cantidad_historial})"
+        except Exception as e:
+            return False, f"Error al borrar: {e}"

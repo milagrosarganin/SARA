@@ -141,6 +141,9 @@ class StockBotApp:
                 BotStates.CONFIRM_MORE_PRODUCCION: [
                     CallbackQueryHandler(self.flow_controller.confirm_more_production)
                 ],
+                BotStates.SELECT_UNDO: [
+                    CallbackQueryHandler(self.flow_controller.undo_item_selected)
+                ],
             },
             fallbacks=[CommandHandler('start', self.flow_controller.start)]
         )

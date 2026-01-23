@@ -40,10 +40,21 @@ class StockFlowController:
         
         # Opción Deshacer
         if sector == 'UNDO_ACTION':
-            await query.edit_message_text("⏳ Deshaciendo último movimiento...", reply_markup=KeyboardBuilder.main_sector_menu())
-            exito, msg = self.sheet_service.undo_last_movement(update.effective_user.first_name)
-            await query.edit_message_text(f"{'✅' if exito else '⛔'} {msg}", reply_markup=KeyboardBuilder.main_sector_menu())
-            return BotStates.SELECT_SECTOR
+            user = update.effective_user.first_name
+            await query.edit_message_text("⏳ Buscando tus últimos movimientos...")
+            
+            moves = self.sheet_service.get_last_user_movements(user)
+            
+            if not moves:
+                 await query.edit_message_text("🤷‍♂️ No encontré movimientos recientes tuyos para deshacer.", reply_markup=KeyboardBuilder.main_sector_menu())
+                 return BotStates.SELECT_SECTOR
+            
+            await query.edit_message_text(
+                "🗑️ **DESHACER MOVIMIENTO**\nTocá el que quieras borrar:", 
+                reply_markup=KeyboardBuilder.undo_list_menu(moves),
+                parse_mode='Markdown'
+            )
+            return BotStates.SELECT_UNDO
 
         # Opción Jefes
         if sector in ['Encargado', 'Administracion']:
@@ -157,15 +168,21 @@ class StockFlowController:
             user = context.user_data.get('nombre_usuario', 'Anónimo') 
             prod = context.user_data['producto']
             local = context.user_data.get('local', 'Desconocido')
-            sector = context.user_data['sector']
+            sector_elegido = context.user_data['sector']
             
-            # 1. Historial
-            self.sheet_service.register_movement(user, sector, prod, -cantidad, local)
+            # MAGIA: Si eligió "TODOS", buscamos el sector real del producto
+            real_sector = sector_elegido
+            if sector_elegido == 'TODOS':
+                real_sector = self.sheet_service.get_product_sector(prod)
+
+            # 1. Historial (Usamos real_sector)
+            self.sheet_service.register_movement(user, real_sector, prod, -cantidad, local)
+            
             # 2. Stock
             exito, alerta, stock, minimo, _ = self.sheet_service.update_stock(prod, cantidad, mode='RETIRO')
             
-            msg = f"✅ Retiro Registrado.\nQuedan: {stock}" if exito else "⚠️ Error técnico."
-            
+            msg = f"✅ Retiro: {prod}\nSector: {real_sector}\nQuedan: {stock}" if exito else "⚠️ Error técnico."
+
             # Alertas
             if alerta and settings.ID_GRUPO_ALERTAS:
                 try:
@@ -173,6 +190,10 @@ class StockFlowController:
                 except: pass
 
             await update.message.reply_text(msg)
+
+            context.user_data['modo'] = 'RETIRO' 
+            await update.message.reply_text("🔄 ¿Querés retirar algo más?", reply_markup=KeyboardBuilder.yes_no_menu())
+            return BotStates.PREGUNTA_CONTINUAR
             
             # Bucle rápido
             context.user_data['modo'] = 'RETIRO' 

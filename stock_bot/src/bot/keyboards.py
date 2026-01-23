@@ -5,6 +5,7 @@ class KeyboardBuilder:
     @staticmethod
     def main_sector_menu():
         keyboard = [
+            [InlineKeyboardButton("🌎 Catálogo Completo (General)", callback_data="TODOS")],
             [InlineKeyboardButton("🤵 Mozo", callback_data='Mozo'),
              InlineKeyboardButton("🍺 Barra", callback_data='Barra')],
             [InlineKeyboardButton("🍳 Cocina", callback_data='Cocina'),
@@ -101,4 +102,21 @@ class KeyboardBuilder:
             [InlineKeyboardButton("🔄 Movimientos (Historial)", callback_data="TYPE_MOVIMIENTOS")],
             [InlineKeyboardButton("🔙 Volver", callback_data="BACK_RANGE")]
         ]
+        return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def undo_list_menu(movements):
+        keyboard = []
+        
+        if not movements:
+            keyboard.append([InlineKeyboardButton("🤷‍♂️ No tenés movimientos recientes", callback_data="BACK_MAIN")])
+        else:
+            for mov in movements:
+                # El botón dirá: "10:30 | Coca Cola (-2)"
+                # El dato oculto (callback) será: "UNDO_ROW_154" (el número de fila)
+                texto = f"{mov['fecha']} | {mov['producto']} ({mov['cantidad']})"
+                callback = f"UNDO_ROW_{mov['row_id']}"
+                keyboard.append([InlineKeyboardButton(texto, callback_data=callback)])
+        
+        keyboard.append([InlineKeyboardButton("🔙 Cancelar", callback_data="BACK_MAIN")])
         return InlineKeyboardMarkup(keyboard)
