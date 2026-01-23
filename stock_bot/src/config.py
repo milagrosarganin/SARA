@@ -16,11 +16,11 @@ class Settings:
     PIN_ENCARGADO = os.getenv("PIN_ENCARGADO", "1234")
     PIN_ADMIN = os.getenv("PIN_ADMIN", "5678")
 
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
     # --- ESTO ERA LO QUE FALTABA ---
     @property
     def is_valid(self):
         return bool(self.TELEGRAM_TOKEN)
 
 settings = Settings()
-
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
