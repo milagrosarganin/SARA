@@ -568,3 +568,30 @@ class StockFlowController:
         if len(reporte) > 4000: reporte = reporte[:4000]
         await update.message.reply_text(reporte, reply_markup=KeyboardBuilder.admin_action_menu())
         return BotStates.SELECT_ACTION
+
+    # --- FUNCIÓN QUE TE FALTA (Agregala al final de la clase) ---
+    async def undo_item_selected(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        data = query.data
+        
+        # Si se arrepiente y quiere volver
+        if data == "BACK_MAIN":
+            return await self.start(update, context)
+            
+        # Si eligió borrar una fila específica (Ej: UNDO_ROW_125)
+        if "UNDO_ROW_" in data:
+            row_id = data.replace("UNDO_ROW_", "")
+            
+            await query.edit_message_text("⏳ Borrando y recalculando stock...")
+            
+            # Llamamos al servicio para borrar esa fila exacta
+            exito, msg = self.sheet_service.undo_specific_row(row_id)
+            
+            await query.edit_message_text(
+                f"{'✅' if exito else '⛔'} {msg}", 
+                reply_markup=KeyboardBuilder.main_sector_menu()
+            )
+            return BotStates.SELECT_SECTOR
+        
+        return BotStates.SELECT_UNDO
