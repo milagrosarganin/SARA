@@ -1,4 +1,5 @@
 import json
+import base64
 from groq import Groq
 from src.config import settings
 
@@ -6,67 +7,76 @@ class AIService:
     def __init__(self):
         self.client = Groq(api_key=settings.GROQ_API_KEY)
 
+    # --- 1. PARA TEXTO (Listas pegadas de WhatsApp) ---
     def match_products_smart(self, user_text, valid_products_list):
-        """
-        Usa Inteligencia Artificial para entender la lista del usuario
-        y mapearla a los productos exactos del Excel.
-        """
-        # Convertimos la lista de productos validos a un string para que la IA la lea
         products_str = "\n".join(valid_products_list)
-        
         prompt = f"""
-        Sos un asistente experto en stock de un restaurante.
-        Tu trabajo es interpretar una lista de items escrita por un humano (con abreviaturas o errores) y conectarla con la lista OFICIAL de productos.
+        Sos un experto en stock. Interpretá esta lista cruda y matcheala con la oficial.
+        LISTA OFICIAL: {products_str}
+        INPUT USUARIO: {user_text}
+        
+        INSTRUCCIONES:
+        1. Ignora precios y códigos. Solo Cantidad y Producto.
+        2. Matchea semánticamente (Ej: "Mila" -> "MILANESA").
+        
+        OUTPUT JSON: {{ "movimientos": [ {{ "input_original": "texto", "cantidad": numero, "producto_oficial": "NOMBRE EXACTO" }} ] }}
+        """
+        return self._call_groq(prompt, model="llama3-70b-8192")
 
-        LISTA OFICIAL DE PRODUCTOS VÁLIDOS:
+    # --- 2. PARA FOTOS (Facturas) ---
+    def analyze_image_smart(self, image_bytes, valid_products_list):
+        # Convertimos la imagen a texto codificado (Base64)
+        base64_image = base64.b64encode(image_bytes).decode('utf-8')
+        products_str = "\n".join(valid_products_list)
+
+        prompt = f"""
+        Sos un experto logístico leyendo una FACTURA.
+        Tu misión: Extraer items (Producto y Cantidad) y matchearlos con la BASE DE DATOS.
+
+        BASE DE DATOS OFICIAL:
         {products_str}
 
-        LISTA DEL USUARIO (Input):
-        {user_text}
-
         INSTRUCCIONES:
-        1. Para cada linea del usuario, extraé la CANTIDAD (numero) y el NOMBRE.
-        2. Busca en la LISTA OFICIAL el producto que mejor coincida SEMÁNTICAMENTE. 
-           Ejemplo: "Mila pollo" -> "MILANESA DE POLLO (PAQUETE X 10)".
-           Ejemplo: "Tubo calamar" -> "TUBO DE CALAMAR (KG)".
-           Ejemplo: "Pan rayado" NO ES "Almendrado".
-        3. Si no encontras coincidencia segura, poné "null" en producto_oficial.
-        4. Si el usuario pone "Ingresa" o "Egresa", detectalo como tipo de movimiento.
+        1. Ignora precios ($), códigos de barra, fechas y direcciones.
+        2. Concentrate en las columnas de DESCRIPCIÓN y CANTIDAD.
+        3. Si ves "30 PEPSI", busca en la base "PEPSI 500".
+        4. Si la imagen no se lee, devolvé lista vacía.
 
-        OUTPUT JSON OBLIGATORIO:
-        Devolve SOLO un objeto JSON con este formato exacto, sin texto extra:
-        {{
-            "movimientos": [
-                {{
-                    "input_original": "texto del usuario",
-                    "cantidad": numero,
-                    "producto_oficial": "NOMBRE EXACTO DE LA LISTA OFICIAL" o null
-                }}
-            ]
-        }}
+        OUTPUT JSON: {{ "movimientos": [ {{ "input_original": "texto leido", "cantidad": numero, "producto_oficial": "NOMBRE EXACTO" }} ] }}
         """
-
+        
+        # Llamada especial con imagen
         try:
             chat_completion = self.client.chat.completions.create(
                 messages=[
                     {
-                        "role": "system",
-                        "content": "Sos un parser JSON estricto. Solo devolvés JSON válido."
-                    },
-                    {
                         "role": "user",
-                        "content": prompt,
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}},
+                        ],
                     }
                 ],
-                model="llama3-70b-8192", # Modelo muy inteligente y rápido
-                temperature=0.1, # Creatividad baja para ser precisos
+                model="llama-3.2-11b-vision-preview", # Modelo con Ojos 👀
+                temperature=0.1,
                 response_format={"type": "json_object"},
             )
-
-            # Convertimos la respuesta de texto a un objeto Python real
-            response_content = chat_completion.choices[0].message.content
-            return json.loads(response_content)
-
+            return json.loads(chat_completion.choices[0].message.content)
         except Exception as e:
-            print(f"Error en IA: {e}")
+            print(f"Error Vision: {e}")
             return None
+
+    # Helper privado para texto
+    def _call_groq(self, prompt, model):
+        try:
+            chat_completion = self.client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": "JSON puro."},
+                    {"role": "user", "content": prompt}
+                ],
+                model=model,
+                temperature=0.1,
+                response_format={"type": "json_object"},
+            )
+            return json.loads(chat_completion.choices[0].message.content)
+        except: return None

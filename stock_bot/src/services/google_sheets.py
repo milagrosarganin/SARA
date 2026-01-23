@@ -505,3 +505,38 @@ class GoogleSheetService:
             return True, f"Deshice: {producto} ({cantidad_historial})"
         except Exception as e:
             return False, f"Error al borrar: {e}"
+
+    # --- PROCESAR FOTO DE FACTURA ---
+    def process_photo_entry(self, image_bytes, user_name):
+        log = ["📸 **FOTO PROCESADA**"]
+        not_found = []
+
+        try:
+            records = self.worksheet_stock.get_all_records()
+            all_products = [str(r.get('PRODUCTO')).strip() for r in records if r.get('PRODUCTO')]
+        except: return "❌ Error leyendo DB."
+
+        # 1. Llamamos a la Visión Artificial
+        resultado_ai = self.ai_service.analyze_image_smart(image_bytes, all_products)
+
+        if not resultado_ai or 'movimientos' not in resultado_ai or not resultado_ai['movimientos']:
+            return "⚠️ No pude leer productos en la foto. Probá sacarla más de cerca."
+
+        # 2. Guardamos los ingresos
+        for item in resultado_ai['movimientos']:
+            producto = item.get('producto_oficial')
+            cantidad = item.get('cantidad')
+            
+            if producto and cantidad:
+                # Registramos como INGRESO
+                self.register_movement(user_name, "Deposito", producto, cantidad, "Foto Factura IA")
+                self.update_stock(producto, int(cantidad), mode='INGRESO')
+                log.append(f"✅ {producto}: +{cantidad}")
+            else:
+                not_found.append(f"❓ {item.get('input_original')}")
+
+        msg = "\n".join(log)
+        if not_found:
+            msg += "\n\n⚠️ **NO LEÍ BIEN ESTOS:**\n" + "\n".join(not_found)
+            
+        return msg

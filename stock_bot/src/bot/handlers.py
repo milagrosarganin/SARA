@@ -543,14 +543,28 @@ class StockFlowController:
             return ConversationHandler.END
 
     # --- 4. PROCESAR LISTA MASIVA ---
-    async def process_batch_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        text = update.message.text
+    async def process_batch_entry(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user.first_name
         
-        await update.message.reply_text("⏳ Procesando lista... (Buscando coincidencias)")
-        
-        reporte = self.sheet_service.process_batch_withdrawal(text, user)
-        
+        # CASO A: ES UNA FOTO 📸
+        if update.message.photo:
+            await update.message.reply_text("👀 Analizando imagen... Dame unos segundos.")
+            # Bajamos la foto en memoria (la última es la de mejor calidad)
+            photo_file = await update.message.photo[-1].get_file()
+            byte_array = await photo_file.download_as_bytearray()
+            
+            # Mandamos a procesar
+            reporte = self.sheet_service.process_photo_entry(byte_array, user)
+
+        # CASO B: ES TEXTO PEGADO 📝
+        elif update.message.text:
+            await update.message.reply_text("📥 Leyendo texto...")
+            reporte = self.sheet_service.process_batch_entry(update.message.text, user)
+            
+        else:
+            await update.message.reply_text("⛔ Formato no válido. Mandá foto o texto.")
+            return BotStates.INPUT_BATCH_ENTRY
+
         if len(reporte) > 4000: reporte = reporte[:4000]
         await update.message.reply_text(reporte, reply_markup=KeyboardBuilder.admin_action_menu())
         return BotStates.SELECT_ACTION
