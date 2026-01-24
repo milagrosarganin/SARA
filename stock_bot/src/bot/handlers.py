@@ -106,26 +106,42 @@ class StockFlowController:
 
     async def category_selected(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
-        await query.answer()
-        data = query.data
-        
-        if data == "CMD_COMENTARIO":
-            await query.edit_message_text("📝 Escribí tu comentario:")
-            return BotStates.INPUT_COMMENT
-        if data == "BACK_START": return await self.start(update, context)
+        try:
+            await query.answer() # Esto quita el relojito
+            
+            # --- PROTECCIÓN ANTI-CUELGUE ---
+            # Si el bot se reinició, la memoria 'sector' se borra. Detectamos eso aquí:
+            if 'sector' not in context.user_data:
+                await query.edit_message_text("⚠️ **Sesión expirada.**\nEl bot se actualizó. Por favor tocá /start para volver al menú.")
+                return ConversationHandler.END
+            # -------------------------------
 
-        cat = data.replace("CAT_", "")
-        context.user_data['categoria'] = cat
-        
-        # Buscamos productos
-        prods = self.sheet_service.get_products_by_category(context.user_data['sector'], cat)
-        if not prods:
-             await query.edit_message_text("⚠️ No hay productos acá.", reply_markup=KeyboardBuilder.main_sector_menu())
-             return BotStates.SELECT_SECTOR
-        
-        verbo = "ingresar" if context.user_data.get('modo') == 'INGRESO' else "retirar"
-        await query.edit_message_text(f"📂 {cat}\n¿Qué vas a {verbo}?", reply_markup=KeyboardBuilder.product_list_menu(prods))
-        return BotStates.SELECT_PRODUCT
+            data = query.data
+            if data == "CMD_COMENTARIO":
+                await query.edit_message_text("📝 Escribí tu comentario:")
+                return BotStates.INPUT_COMMENT
+            if data == "BACK_START": return await self.start(update, context)
+
+            cat = data.replace("CAT_", "")
+            context.user_data['categoria'] = cat
+            
+            # Buscamos productos con control de errores
+            prods = self.sheet_service.get_products_by_category(context.user_data['sector'], cat)
+            
+            if not prods:
+                await query.edit_message_text(f"⚠️ No hay productos cargados en '{cat}'.", reply_markup=KeyboardBuilder.main_sector_menu())
+                return BotStates.SELECT_SECTOR
+            
+            verbo = "ingresar" if context.user_data.get('modo') == 'INGRESO' else "retirar"
+            await query.edit_message_text(f"📂 {cat}\n¿Qué vas a {verbo}?", reply_markup=KeyboardBuilder.product_list_menu(prods))
+            return BotStates.SELECT_PRODUCT
+
+        except Exception as e:
+            print(f"🔥 Error critico en categoria: {e}")
+            try:
+                await query.edit_message_text(f"❌ Error inesperado: {str(e)}\nTocá /start")
+            except: pass
+            return ConversationHandler.END
 
     async def product_selected(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
