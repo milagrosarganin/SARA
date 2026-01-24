@@ -569,6 +569,22 @@ class StockFlowController:
         await update.message.reply_text(reporte, reply_markup=KeyboardBuilder.admin_action_menu())
         return BotStates.SELECT_ACTION
 
+    # --- PARA RETIRO MASIVO (LISTA DE TEXTO) ---
+    async def process_batch_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text = update.message.text
+        user = update.effective_user.first_name
+        
+        await update.message.reply_text("⚡ Procesando retiro masivo... dame unos segundos.")
+        
+        # Llamamos al servicio de Google Sheets para procesar la lista como RETIRO
+        reporte = self.sheet_service.process_batch_list(text, user)
+        
+        if len(reporte) > 4000: reporte = reporte[:4000]
+        
+        # Al terminar, volvemos al menú principal
+        await update.message.reply_text(reporte, reply_markup=KeyboardBuilder.main_sector_menu())
+        return BotStates.SELECT_SECTOR
+
     # --- FUNCIÓN QUE TE FALTA (Agregala al final de la clase) ---
     async def undo_item_selected(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
@@ -595,3 +611,5 @@ class StockFlowController:
             return BotStates.SELECT_SECTOR
         
         return BotStates.SELECT_UNDO
+
+    

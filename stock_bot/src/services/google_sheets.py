@@ -409,6 +409,41 @@ class GoogleSheetService:
             return f"❌ Error generando reporte: {e}"
 
     # --- RETIRO MASIVO TODO TERRENO (Versión Final) ---
+    # --- PROCESAR RETIRO MASIVO (LISTA) ---
+    def process_batch_list(self, raw_text, user_name):
+        log = ["⚡ **RETIRO MASIVO PROCESADO**"]
+        not_found = []
+        
+        try:
+            records = self.worksheet_stock.get_all_records()
+            all_products = [str(r.get('PRODUCTO')).strip() for r in records if r.get('PRODUCTO')]
+        except: return "❌ Error leyendo DB."
+
+        # 1. Usamos la IA para entender la lista
+        resultado_ai = self.ai_service.match_products_smart(raw_text, all_products)
+        
+        if not resultado_ai or 'movimientos' not in resultado_ai:
+            return "⚠️ No entendí la lista. Probá poner 'Cantidad Producto' en cada línea."
+
+        # 2. Procesamos (RESTA DE STOCK)
+        for item in resultado_ai['movimientos']:
+            producto = item.get('producto_oficial')
+            cantidad = item.get('cantidad')
+            
+            if producto and cantidad:
+                # Registramos como RETIRO
+                self.register_movement(user_name, "Cocina", producto, cantidad, "Retiro Masivo IA")
+                self.update_stock(producto, int(cantidad), mode='RETIRO')
+                log.append(f"✅ {producto}: -{cantidad}")
+            else:
+                not_found.append(f"❓ {item.get('input_original')}")
+
+        msg = "\n".join(log)
+        if not_found:
+            msg += "\n\n⚠️ **NO ENCONTRÉ ESTOS:**\n" + "\n".join(not_found)
+            
+        return msg
+
     # --- RETIRO MASIVO CON INTELIGENCIA ARTIFICIAL (GROQ) ---
     def process_batch_withdrawal(self, raw_text, user_name):
         log = ["⚡ **RETIRO INTELIGENTE (IA)**"]
