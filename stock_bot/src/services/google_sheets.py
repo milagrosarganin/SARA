@@ -78,8 +78,9 @@ class GoogleSheetService:
                 match_cat = str(row['CATEGORIA']).strip().upper() == category.upper()
                 
                 if match_sector and match_cat:
-                    products.append(row['PRODUCTO'])
-            return sorted(products)
+                    # CORRECCIÓN: Devolvemos toda la fila 'row', NO solo el nombre
+                    products.append(row) 
+            return products
         except: return []
 
     def get_product_sector(self, product_name):

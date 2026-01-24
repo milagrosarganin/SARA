@@ -107,14 +107,13 @@ class StockFlowController:
     async def category_selected(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         try:
-            await query.answer() # Esto quita el relojito
+            await query.answer() # MATAR EL RELOJITO
             
-            # --- PROTECCIÓN ANTI-CUELGUE ---
-            # Si el bot se reinició, la memoria 'sector' se borra. Detectamos eso aquí:
+            # --- PROTECCIÓN: SI SE REINICIÓ EL BOT ---
             if 'sector' not in context.user_data:
-                await query.edit_message_text("⚠️ **Sesión expirada.**\nEl bot se actualizó. Por favor tocá /start para volver al menú.")
+                await query.edit_message_text("⚠️ **Sesión expirada.**\nEl bot se actualizó. Por favor tocá /start.")
                 return ConversationHandler.END
-            # -------------------------------
+            # -----------------------------------------
 
             data = query.data
             if data == "CMD_COMENTARIO":
