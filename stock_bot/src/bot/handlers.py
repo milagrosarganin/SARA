@@ -233,27 +233,31 @@ class StockFlowController:
              return BotStates.ASK_UNIT_PRICE
              
         precio = int(text)
+        prod_nombre = context.user_data.get('producto')
+
+        # INTELIGENCIA: Buscamos el sector REAL del producto (porque ahora estamos en modo TODOS)
+        sector_real = self.sheet_service.get_product_sector(prod_nombre)
         
         # GUARDAMOS TODO EL INGRESO
         data = {
             'fecha': datetime.now().strftime("%Y-%m-%d"),
             'usuario': update.effective_user.first_name,
-            'sector': context.user_data.get('sector'),
+            'sector': sector_real, 
             'local': context.user_data.get('local', 'General'),
-            'producto': context.user_data.get('producto'),
+            'producto': prod_nombre,
             'cantidad': context.user_data.get('temp_cantidad'),
             'vencimiento': context.user_data.get('temp_vencimiento'),
             'proveedor': context.user_data.get('ingreso_proveedor'),
             'monto': context.user_data.get('ingreso_monto'),
             'tipo_fact': context.user_data.get('ingreso_tipo_fact'),
-            'precio_unitario': precio # <--- Esto activa la alerta de inflación
+            'precio_unitario': precio 
         }
         
         exito, alerta_precio = self.sheet_service.register_full_entry(data)
         
         if exito:
-            msg = "✅ **Ingreso Guardado**"
-            if alerta_precio: msg += f"\n\n{alerta_precio}" # Muestra si subió o bajó el precio
+            msg = f"✅ **Ingreso Guardado**\n(Sector detectado: {sector_real})"
+            if alerta_precio: msg += f"\n\n{alerta_precio}" 
             
             await update.message.reply_text(msg)
             await update.message.reply_text("¿Tenés **MÁS PRODUCTOS** de la misma factura?", reply_markup=KeyboardBuilder.yes_no_menu())
@@ -428,14 +432,17 @@ class StockFlowController:
             # Opción Pedido
             if context.user_data.get('next_action') == 'PEDIDO':
                 await update.message.reply_text("🔓 Acceso OK. ¿Quién hace el pedido?")
-                return BotStates.ORDER_INPUT_NAME # <--- Esto llamará a order_name_received
+                return BotStates.ORDER_INPUT_NAME 
             
-            # Opción Ingreso Stock
+            # Opción Ingreso Stock (MODIFICADO PARA UNIFICAR)
             context.user_data['modo'] = 'INGRESO'
-            kb = [[InlineKeyboardButton(s, callback_data=s) for s in ["Cocina", "Barra"]],
-                  [InlineKeyboardButton(s, callback_data=s) for s in ["Salon", "Deposito"]]]
-            await update.message.reply_text("🔓 Acceso OK. ¿Qué SECTOR?", reply_markup=InlineKeyboardMarkup(kb))
-            return BotStates.SELECT_SECTOR
+            
+            # TRUCO: Seteamos 'TODOS' automáticamente para que traiga todas las categorías juntas
+            context.user_data['sector'] = 'TODOS' 
+            
+            # Saltamos directo a pedir Proveedor (sin preguntar sector)
+            await update.message.reply_text("🔓 Acceso OK. (Categorías Unificadas)\n🏢 Decime: ¿De qué **PROVEEDOR** es la mercadería?")
+            return BotStates.ASK_SUPPLIER
             
         await update.message.reply_text("⛔ PIN Incorrecto.")
         return BotStates.CHECK_PIN
