@@ -411,6 +411,7 @@ class GoogleSheetService:
 
     # --- RETIRO MASIVO TODO TERRENO (Versión Final) ---
     # --- PROCESAR RETIRO MASIVO (LISTA) ---
+    # --- PROCESAR RETIRO MASIVO (LISTA) ---
     def process_batch_list(self, raw_text, user_name):
         log = ["⚡ **RETIRO MASIVO PROCESADO**"]
         not_found = []
@@ -432,9 +433,15 @@ class GoogleSheetService:
             cantidad = item.get('cantidad')
             
             if producto and cantidad:
-                # Registramos como RETIRO
-                self.register_movement(user_name, "Cocina", producto, cantidad, "Retiro Masivo IA")
+                # CORRECCIÓN AQUÍ 👇: Agregamos el signo '-' y convertimos a int
+                cantidad_negativa = -int(cantidad)
+                
+                # Registramos con número NEGATIVO para que salga como RETIRO 🔴
+                self.register_movement(user_name, "Varios", producto, cantidad_negativa, "Retiro Masivo IA")
+                
+                # Al actualizar stock, usamos el modo 'RETIRO' (aquí sí va el número positivo, el método se encarga de restar)
                 self.update_stock(producto, int(cantidad), mode='RETIRO')
+                
                 log.append(f"✅ {producto}: -{cantidad}")
             else:
                 not_found.append(f"❓ {item.get('input_original')}")
