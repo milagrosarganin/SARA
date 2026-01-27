@@ -7,6 +7,7 @@ load_dotenv()
 class Settings:
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
     GOOGLE_SHEET_NAME = os.getenv("GOOGLE_SHEET_NAME", "SISTEMA_STOCK_MASTER")
+    GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS", "credenciales.json")
     
     try:
         ID_GRUPO_ALERTAS = int(os.getenv("ID_GRUPO_ALERTAS", "0"))

@@ -681,4 +681,20 @@ class StockFlowController:
 
         return BotStates.SELECT_ACTION
 
+    # --- FUNCIÓN FALTANTE: DECISIÓN DE MÁS PRODUCTOS ---
+    async def more_products_decision(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        
+        if query.data == 'SI':
+            # Si tiene más productos, preguntamos si es la misma factura
+            # para no tener que pedirle Proveedor y Nro Factura de nuevo.
+            await query.edit_message_text("🔄 ¿Es de la misma factura/proveedor?", reply_markup=KeyboardBuilder.yes_no_menu())
+            return BotStates.CHECK_SAME_INVOICE
+        else:
+            # Si dice que NO, terminamos y limpiamos memoria
+            context.user_data.clear()
+            await query.edit_message_text("👋 Ingreso de Stock finalizado exitosamente.")
+            return ConversationHandler.END
+
     
