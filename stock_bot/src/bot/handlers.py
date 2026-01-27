@@ -165,12 +165,16 @@ class StockFlowController:
         if modo == 'PRODUCCION':
             prod = context.user_data['producto']
             user = update.effective_user.first_name
+            cantidad = int(update.message.text) # Aseguramos que sea entero
             
-            # Guardamos como INGRESO especial
-            self.sheet_service.register_movement(user, "Cocina", prod, cantidad, "Producción Propia")
+            # INTELIGENCIA: Detectamos el sector real (ej: Cheesecake -> Pastelería)
+            sector_real = self.sheet_service.get_product_sector(prod)
+            
+            # Guardamos usando el sector real
+            self.sheet_service.register_movement(user, sector_real, prod, cantidad, "Producción Propia")
             exito, _, stock, _, _ = self.sheet_service.update_stock(prod, cantidad, mode='INGRESO')
             
-            await update.message.reply_text(f"✅ Producción: **{prod}** (+{cantidad})\nStock Nuevo: {stock}", parse_mode='Markdown')
+            await update.message.reply_text(f"✅ Producción: **{prod}** (+{cantidad})\nSector detectado: {sector_real}\nStock Nuevo: {stock}", parse_mode='Markdown')
             await update.message.reply_text("¿Cargaste algo más de Producción?", reply_markup=KeyboardBuilder.yes_no_menu())
             return BotStates.CONFIRM_MORE_PRODUCCION
 
@@ -269,16 +273,19 @@ class StockFlowController:
             return BotStates.SELECT_ACTION
 
     # --- CONFIRMACIÓN Y BUCLES ---
-    async def more_products_decision(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def confirm_more_production(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
-        if query.data == 'NO':
-            await query.edit_message_text("👌 Ingreso finalizado.")
-            return await self.start(update, context)
+        
+        if query.data == 'SI':
+            cats = self.sheet_service.get_unique_categories('TODOS')
             
-        # Si sigue, preguntamos si es misma factura
-        await query.edit_message_text("¿Son de la **MISMA FACTURA**?", reply_markup=KeyboardBuilder.yes_no_menu())
-        return BotStates.CHECK_SAME_INVOICE
+            await query.edit_message_text("🍳 Sigamos. ¿Qué Categoría?", reply_markup=KeyboardBuilder.category_menu(cats))
+            return BotStates.SELECT_CATEGORY
+        else:
+            context.user_data.clear()
+            await query.edit_message_text("👋 Ingreso de Elaboración Propia TERMINADO.")
+            return ConversationHandler.END
 
     # --- ESTA ES LA FUNCIÓN QUE FALTABA ---
     async def check_same_invoice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -377,10 +384,14 @@ class StockFlowController:
         action = query.data
         
         # --- 1. PRODUCCIÓN PROPIA (NUEVO) ---
+        # --- CASO A: PRODUCCIÓN PROPIA (MEJORADO) ---
         if action == 'START_PRODUCCION':
             context.user_data['modo'] = 'PRODUCCION'
-            context.user_data['sector'] = 'Cocina'
-            cats = self.sheet_service.get_unique_categories('Cocina')
+            context.user_data['sector'] = 'TODOS' # <--- CLAVE: Para ver todo
+            
+            # Traemos TODAS las categorías
+            cats = self.sheet_service.get_unique_categories('TODOS')
+            
             await query.edit_message_text("🍳 **PRODUCCIÓN PROPIA**\nSeleccioná la Categoría:", reply_markup=KeyboardBuilder.category_menu(cats))
             return BotStates.SELECT_CATEGORY
 
