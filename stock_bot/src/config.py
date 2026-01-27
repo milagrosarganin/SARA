@@ -18,6 +18,8 @@ class Settings:
 
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
+    DRIVE_FOLDER_ID_FACTURAS = os.getenv("DRIVE_FOLDER_ID_FACTURAS")
+
     # --- ESTO ERA LO QUE FALTABA ---
     @property
     def is_valid(self):
