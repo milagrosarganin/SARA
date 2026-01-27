@@ -24,6 +24,7 @@ class KeyboardBuilder:
             [InlineKeyboardButton("🍳 Ingresar Producción Propia", callback_data="START_PRODUCCION")],
             # Botón 2: Retiro Masivo (Lista)
             [InlineKeyboardButton("⚡ Retirar Varios (Lista)", callback_data="START_MASIVO")],
+            [InlineKeyboardButton("📸 Cargar Foto Factura", callback_data="BTN_CARGAR_FACTURA")],
             
             [InlineKeyboardButton("📥 Ingresar Stock (Proveedor)", callback_data="INGRESAR_STOCK")],
             [InlineKeyboardButton("🔍 Buscar Producto (Visor)", callback_data="BUSCAR_PRODUCTO")],

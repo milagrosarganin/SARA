@@ -5,10 +5,12 @@ from src.bot.keyboards import KeyboardBuilder
 from src.services.google_sheets import GoogleSheetService
 from src.config import settings
 from datetime import datetime
+from src.services.drive_service import GoogleDriveService
 
 class StockFlowController:
     def __init__(self):
         self.sheet_service = GoogleSheetService()
+        self.drive_service = GoogleDriveService()   
 
     # --- INICIO Y MENÚ PRINCIPAL ---
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -633,5 +635,39 @@ class StockFlowController:
             return BotStates.SELECT_SECTOR
         
         return BotStates.SELECT_UNDO
+
+    # --- HANDLER DEL BOTÓN ---
+    async def btn_cargar_factura_pressed(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        await query.edit_message_text("📸 **CARGAR FACTURA**\nPor favor, enviame ahora la FOTO de la factura.")
+        return BotStates.WAITING_FOR_FACTURA_PHOTO
+
+    # --- HANDLER QUE RECIBE LA FOTO ---
+    async def foto_factura_received(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user = update.effective_user
+        await update.message.reply_text("⏳ Subiendo a Drive...")
+
+        try:
+            # 1. Bajar foto de Telegram
+            photo_file = await update.message.photo[-1].get_file()
+            image_bytes = await photo_file.download_as_bytearray()
+
+            # 2. Nombre del archivo
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"factura_{user.first_name}_{timestamp}.jpg"
+
+            # 3. Subir a Drive
+            drive_link = self.drive_service.upload_image_from_bytes(image_bytes, filename)
+
+            if drive_link:
+                await update.message.reply_text(f"✅ **Guardada en Drive**\n📂 Link: {drive_link}", reply_markup=KeyboardBuilder.admin_action_menu())
+            else:
+                 await update.message.reply_text("❌ Error subiendo a Drive. Verificá el ID de la carpeta en .env")
+
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}")
+
+        return BotStates.SELECT_ACTION
 
     

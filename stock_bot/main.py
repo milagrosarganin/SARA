@@ -156,6 +156,14 @@ class StockBotApp:
                 BotStates.INPUT_PAYMENT_AMOUNT: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.flow_controller.payment_amount_received)
                 ],
+                BotStates.SELECT_ACTION: [
+                    # AGREGAR ESTA LÍNEA PARA QUE EL BOTÓN FUNCIONE:
+                    CallbackQueryHandler(self.flow_controller.btn_cargar_factura_pressed, pattern='^BTN_CARGAR_FACTURA$'),
+                    CallbackQueryHandler(self.flow_controller.handle_admin_action)
+                ],
+                BotStates.WAITING_FOR_FACTURA_PHOTO: [
+                    MessageHandler(filters.PHOTO, self.flow_controller.foto_factura_received)
+                ],
             },
             fallbacks=[
                 CommandHandler('start', self.flow_controller.start),
