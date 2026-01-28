@@ -665,7 +665,7 @@ class StockFlowController:
             image_bytes = await photo_file.download_as_bytearray()
 
             # 2. Nombre del archivo
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"factura_{user.first_name}_{timestamp}.jpg"
 
             # 3. Subir a Drive
