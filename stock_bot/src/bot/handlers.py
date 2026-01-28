@@ -5,12 +5,10 @@ from src.bot.keyboards import KeyboardBuilder
 from src.services.google_sheets import GoogleSheetService
 from src.config import settings
 from datetime import datetime
-from src.services.drive_service import GoogleDriveService
 
 class StockFlowController:
     def __init__(self):
-        self.sheet_service = GoogleSheetService()
-        self.drive_service = GoogleDriveService()   
+        self.sheet_service = GoogleSheetService()   
 
     # --- INICIO Y MENÚ PRINCIPAL ---
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -654,30 +652,48 @@ class StockFlowController:
         await query.edit_message_text("📸 **CARGAR FACTURA**\nPor favor, enviame ahora la FOTO de la factura.")
         return BotStates.WAITING_FOR_FACTURA_PHOTO
 
-    # --- HANDLER QUE RECIBE LA FOTO ---
+    # --- HANDLER: ARCHIVO EN TELEGRAM (NUEVO) ---
     async def foto_factura_received(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user = update.effective_user
-        await update.message.reply_text("⏳ Subiendo a Drive...")
-
         try:
-            # 1. Bajar foto de Telegram
-            photo_file = await update.message.photo[-1].get_file()
-            image_bytes = await photo_file.download_as_bytearray()
+            # 1. Avisamos
+            await update.message.reply_text("⏳ Guardando en el Archivo Digital...")
+            
+            # 2. Reenviamos la foto al Canal Privado
+            # (El bot necesita ser ADMIN del canal para esto)
+            target_chat_id = settings.ID_CANAL_FACTURAS
+            
+            forwarded_msg = await context.bot.forward_message(
+                chat_id=target_chat_id,
+                from_chat_id=update.effective_chat.id,
+                message_id=update.message.message_id
+            )
+            
+            # 3. Obtenemos el Link Permanente
+            # El link suele ser: https://t.me/c/ID_SIN_100/ID_MENSAJE
+            # Pero usamos la propiedad .link que es más segura
+            factura_link = forwarded_msg.link
+            
+            if not factura_link:
+                # Fallback manual por si acaso
+                clean_id = str(target_chat_id).replace("-100", "")
+                factura_link = f"https://t.me/c/{clean_id}/{forwarded_msg.message_id}"
 
-            # 2. Nombre del archivo
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"factura_{user.first_name}_{timestamp}.jpg"
-
-            # 3. Subir a Drive
-            drive_link = self.drive_service.upload_image_from_bytes(image_bytes, filename)
-
-            if drive_link:
-                await update.message.reply_text(f"✅ **Guardada en Drive**\n📂 Link: {drive_link}", reply_markup=KeyboardBuilder.admin_action_menu())
-            else:
-                 await update.message.reply_text("❌ Error subiendo a Drive. Verificá el ID de la carpeta en .env")
-
+            # 4. (Opcional) Aquí guardarías 'factura_link' en el Excel si quisieras
+            # self.sheet_service.registrar_factura(..., factura_link)
+            
+            await update.message.reply_text(
+                f"✅ **Factura Archivada**\n"
+                f"📎 Link: {factura_link}",
+                reply_markup=KeyboardBuilder.admin_action_menu(),
+                disable_web_page_preview=True
+            )
+            
         except Exception as e:
-            await update.message.reply_text(f"❌ Error: {e}")
+            print(f"Error Telegram Archivo: {e}")
+            await update.message.reply_text(
+                f"❌ Error: {e}\nasegurate que soy ADMIN del canal {settings.ID_CANAL_FACTURAS}",
+                reply_markup=KeyboardBuilder.admin_action_menu()
+            )
 
         return BotStates.SELECT_ACTION
 

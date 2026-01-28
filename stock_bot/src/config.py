@@ -18,6 +18,7 @@ class Settings:
     PIN_ADMIN = os.getenv("PIN_ADMIN", "5678")
 
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+    ID_CANAL_FACTURAS = os.getenv("ID_CANAL_FACTURAS")
 
     DRIVE_FOLDER_ID_FACTURAS = os.getenv("DRIVE_FOLDER_ID_FACTURAS")
 
